@@ -7,11 +7,11 @@ from unittest.mock import patch
 import pytest
 
 from src.utils.config import (
-    AnthropicSettings,
     Environment,
     FinkSettings,
     LoggingSettings,
     LogLevel,
+    OpenAISettings,
     ProcessingSettings,
     Settings,
     StorageSettings,
@@ -143,28 +143,28 @@ class TestLoggingSettings:
             assert settings.level == level
 
 
-class TestAnthropicSettings:
-    """Tests for AnthropicSettings configuration."""
+class TestOpenAISettings:
+    """Tests for OpenAISettings configuration."""
 
     def test_default_values(self) -> None:
-        """Test that AnthropicSettings has correct defaults."""
-        settings = AnthropicSettings()
+        """Test that OpenAISettings has correct defaults."""
+        settings = OpenAISettings()
 
         assert settings.api_key is None
-        assert settings.model == "claude-sonnet-4-20250514"
+        assert settings.model == "gpt-5"
         assert settings.max_tokens == 4096
         assert settings.temperature == 0.0
 
     def test_temperature_validation(self) -> None:
         """Test temperature validation bounds."""
-        settings = AnthropicSettings(temperature=0.5)
+        settings = OpenAISettings(temperature=0.5)
         assert settings.temperature == 0.5
 
         with pytest.raises(ValueError):
-            AnthropicSettings(temperature=-0.1)
+            OpenAISettings(temperature=-0.1)
 
         with pytest.raises(ValueError):
-            AnthropicSettings(temperature=1.5)
+            OpenAISettings(temperature=1.5)
 
 
 class TestSettings:

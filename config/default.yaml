@@ -59,12 +59,12 @@ pipeline:
 # =============================================================================
 agents:
   orchestrator:
-    model: "claude-sonnet-4-20250514"
+    model: "gpt-5"
     max_tokens: 2000
     temperature: 0.3          # Low temperature for reliable classification
 
   triage:
-    model: "claude-sonnet-4-20250514"
+    model: "gpt-5"
     max_tokens: 1000
     temperature: 0.2
     # Confidence thresholds for routing
@@ -72,7 +72,7 @@ agents:
     anomaly_score_threshold: 0.7
 
   anomaly:
-    model: "claude-sonnet-4-20250514"
+    model: "gpt-5"
     max_tokens: 3000
     temperature: 0.4          # Slightly higher for creative pattern finding
     # Statistical thresholds

@@ -4,6 +4,8 @@
 
 An open-source platform for detecting and classifying astronomical transients from telescope survey data. We ingest streaming alerts from ZTF (and soon Rubin/LSST), process them through a Databricks lakehouse architecture, and use AI agents to identify genuinely anomalous events that might represent new physics.
 
+Development workflow in this repo is Codex-first. See `AGENTS.md` for the active agent instructions and operating conventions.
+
 ## Vision
 
 Every night, survey telescopes like the Zwicky Transient Facility (ZTF) generate hundreds of thousands of alerts about objects that have changed brightness. Most are known phenomena—variable stars, asteroids, routine supernovae. But hidden in this data stream could be something unprecedented: a new class of transient, a rare kilonova from merging neutron stars, or gravitational microlensing revealing an isolated black hole.
@@ -87,7 +89,7 @@ astrophysics-data-engineering/
 - [x] Pydantic models for ZTF alerts
 - [x] Bronze layer processor
 - [x] Test framework
-- [ ] Fink API client with retry logic
+- [x] Fink API client with retry logic
 - [ ] Silver layer processor
 - [ ] Gold layer with cross-matching
 - [ ] Basic triage agent
@@ -116,15 +118,17 @@ pip install -e ".[dev]"
 
 ### Configuration
 
-Configuration is managed via environment variables or a `.env` file:
+Configuration is managed via environment variables or a manually created `.env` file:
 
 ```bash
 # .env example
 AGD_ENVIRONMENT=development
 STORAGE_BASE_PATH=./data
 FINK_TIMEOUT_SECONDS=30
-ANTHROPIC_API_KEY=your-api-key  # For agent features
+OPENAI_API_KEY=your-api-key  # For future agent features
 ```
+
+The runtime source of truth is `src/utils/config.py`. `config/default.yaml` is currently a planning/defaults artifact and is not loaded by the application runtime.
 
 ### Running Tests
 
@@ -211,7 +215,7 @@ The Fink broker assigns ML classifications:
 | Configuration | pydantic-settings | Environment-based config management |
 | Logging | structlog | Structured logging for observability |
 | Astronomy | astropy, astroquery | Coordinate transforms, catalog queries |
-| AI Agents | Claude API | Scientific reasoning and anomaly assessment |
+| AI Agents | OpenAI API | Scientific reasoning and anomaly assessment |
 | Testing | pytest | Unit, integration, and data quality tests |
 
 ## Development Guidelines
@@ -247,7 +251,7 @@ Science demands rigor:
 - Silver/gold layers, cross-matching with Gaia/SIMBAD, basic ML classification
 
 ### Phase 3: Agents
-- LLM-powered triage agent, anomaly detection, report generation
+- OpenAI-powered triage agent, anomaly detection, report generation
 
 ### Phase 4: Production
 - Databricks deployment, Kafka streaming, monitoring dashboards

@@ -154,20 +154,20 @@ class LoggingSettings(BaseSettings):
     log_file: Path | None = None
 
 
-class AnthropicSettings(BaseSettings):
-    """Configuration for Claude API (Anthropic).
+class OpenAISettings(BaseSettings):
+    """Configuration for the OpenAI API.
 
     Attributes:
-        api_key: Anthropic API key (loaded from environment).
+        api_key: OpenAI API key (loaded from environment).
         model: Model to use for agent operations.
         max_tokens: Maximum tokens for model responses.
         temperature: Sampling temperature for model responses.
     """
 
-    model_config = SettingsConfigDict(env_prefix="ANTHROPIC_")
+    model_config = SettingsConfigDict(env_prefix="OPENAI_")
 
     api_key: str | None = None
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "gpt-5"
     max_tokens: int = Field(default=4096, ge=1, le=100000)
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
 
@@ -186,7 +186,7 @@ class Settings(BaseSettings):
         storage: Data storage configuration.
         processing: Processing pipeline configuration.
         logging: Logging configuration.
-        anthropic: Claude API configuration.
+        openai: OpenAI API configuration.
     """
 
     model_config = SettingsConfigDict(
@@ -205,7 +205,7 @@ class Settings(BaseSettings):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     processing: ProcessingSettings = Field(default_factory=ProcessingSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
-    anthropic: AnthropicSettings = Field(default_factory=AnthropicSettings)
+    openai: OpenAISettings = Field(default_factory=OpenAISettings)
 
     @model_validator(mode="after")
     def adjust_settings_for_environment(self) -> "Settings":

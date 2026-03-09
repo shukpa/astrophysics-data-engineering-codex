@@ -26,16 +26,16 @@ pip install -e ".[dev]"
 
 ### 2. Configuration
 
-Copy the example environment file and fill in your API keys:
+Create a `.env` file in the repo root and fill in your API keys:
 
 ```bash
-cp .env.example .env
+touch .env
 ```
 
 Required environment variables:
 ```bash
-# Anthropic API key (for agent layer)
-ANTHROPIC_API_KEY=sk-ant-...
+# OpenAI API key (for future agent layer)
+OPENAI_API_KEY=sk-...
 
 # Optional: Fink livestream credentials (Phase 2)
 FINK_USERNAME=
@@ -49,12 +49,11 @@ DATABRICKS_TOKEN=
 
 The Fink REST API requires **no authentication** for Phase 1. You can start immediately.
 
+`src/utils/config.py` is the runtime configuration source of truth. `config/default.yaml` is currently a planning artifact and is not loaded automatically.
+
 ### 3. Verify Installation
 
 ```bash
-# Run the connection test
-python -m src.ingestion.fink_api_demo
-
 # Run the test suite
 pytest tests/ -v
 
@@ -109,7 +108,7 @@ databricks clusters create --json-file config/databricks_cluster.json
 - `pyyaml` — Configuration file parsing
 
 ### Agents (Phase 3)
-- `anthropic` — Claude API client
+- `openai` — OpenAI API client
 - (Future: evaluate LangChain vs custom orchestration)
 
 ### Streaming (Phase 2)
