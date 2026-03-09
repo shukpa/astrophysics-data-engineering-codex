@@ -1,0 +1,153 @@
+# Agentic Galactic Discovery — Default Configuration
+# Override per-environment in development.yaml / production.yaml
+
+# =============================================================================
+# Data Sources
+# =============================================================================
+sources:
+  fink:
+    api_base_url: "https://api.fink-portal.org"
+    api_version: "v1"
+    default_output_format: "json"
+    request_timeout_seconds: 30
+    max_retries: 3
+    retry_backoff_factor: 2.0
+    rate_limit_requests_per_minute: 60
+
+  antares:
+    api_base_url: "https://antares.noirlab.edu"
+    request_timeout_seconds: 30
+    max_retries: 3
+
+  catalogs:
+    simbad:
+      timeout_seconds: 30
+      default_radius_arcsec: 5.0
+    gaia:
+      catalog: "gaiadr3.gaia_source"
+      timeout_seconds: 60
+      default_radius_degrees: 0.001
+
+# =============================================================================
+# Processing Pipeline
+# =============================================================================
+pipeline:
+  # Medallion architecture settings
+  bronze:
+    # Store raw alerts with minimal transformation
+    partition_by: ["observation_date"]
+    file_format: "parquet"
+    compression: "snappy"
+
+  silver:
+    # Cleaned, validated, deduplicated
+    partition_by: ["observation_date", "fink_class"]
+    deduplication_key: "candidId"
+    # Reject alerts with these conditions
+    rejection_filters:
+      - "magpsf IS NULL"
+      - "sigmapsf > 1.0"
+      - "rb < 0.2"            # real/bogus score too low
+
+  gold:
+    # Enriched with cross-references and derived features
+    partition_by: ["observation_date", "fink_class"]
+    cross_reference_radius_arcsec: 5.0
+
+# =============================================================================
+# Agent Configuration
+# =============================================================================
+agents:
+  orchestrator:
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 2000
+    temperature: 0.3          # Low temperature for reliable classification
+
+  triage:
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 1000
+    temperature: 0.2
+    # Confidence thresholds for routing
+    high_confidence_threshold: 0.85
+    anomaly_score_threshold: 0.7
+
+  anomaly:
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 3000
+    temperature: 0.4          # Slightly higher for creative pattern finding
+    # Statistical thresholds
+    outlier_sigma_threshold: 3.0
+    minimum_detections_for_analysis: 5
+
+# =============================================================================
+# Classification
+# =============================================================================
+classification:
+  # Priority levels for follow-up
+  priority_levels:
+    CRITICAL: "Potentially new/anomalous — requires immediate human review"
+    HIGH: "Scientifically valuable known type — spectroscopic follow-up recommended"
+    MEDIUM: "Interesting but not urgent — queue for nightly review"
+    LOW: "Well-characterized known type — archive only"
+
+  # Known transient classes (aligned with Fink classifications)
+  known_classes:
+    - "SN candidate"
+    - "Early SN Ia candidate"
+    - "SN Ia"
+    - "SN II"
+    - "Kilonova candidate"
+    - "Microlensing candidate"
+    - "AGN"
+    - "QSO"
+    - "Variable Star"
+    - "Cataclysmic Variable"
+    - "YSO"
+    - "Solar System MPC"
+    - "Solar System candidate"
+
+# =============================================================================
+# Output & Notifications
+# =============================================================================
+output:
+  dashboard:
+    port: 8501
+    refresh_interval_seconds: 60
+
+  nightly_digest:
+    enabled: true
+    generation_time_utc: "12:00"   # Noon UTC, after most northern hemisphere nights
+    include_top_n_events: 20
+    include_anomaly_summary: true
+
+  notifications:
+    # Only notify for HIGH and CRITICAL priority
+    minimum_priority: "HIGH"
+    channels:
+      slack:
+        enabled: false
+      discord:
+        enabled: false
+
+# =============================================================================
+# Storage (Local Development)
+# =============================================================================
+storage:
+  local:
+    base_path: "./data"
+    bronze_path: "./data/bronze"
+    silver_path: "./data/silver"
+    gold_path: "./data/gold"
+    logs_path: "./logs"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"
+  format: "json"            # "json" for structured, "console" for human-readable
+  file:
+    enabled: true
+    path: "./logs/agd.log"
+    max_size_mb: 100
+    backup_count: 5
