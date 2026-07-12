@@ -92,6 +92,35 @@ class TestSimbadClientUnit:
             client.cone_search(ra=QUERY_RA, dec=QUERY_DEC)
         assert mock_query.call_count == 1
 
+    def test_legacy_sexagesimal_schema_does_not_crash(self, tmp_path: Path) -> None:
+        # Older astroquery (still pip-allowed) returned uppercase columns with
+        # sexagesimal string coordinates. This must degrade to a usable match
+        # (with computed separation), never raise and abort the gold batch.
+        legacy = pd.DataFrame(
+            {
+                "MAIN_ID": ["3C 273"],
+                "RA": ["12 29 06.6997"],  # hours
+                "DEC": ["+02 03 08.598"],  # degrees
+                "OTYPE": ["QSO"],
+            }
+        )
+        client = make_client(tmp_path)
+        with patch.object(SimbadClient, "_query_region", return_value=legacy):
+            match = client.nearest(ra=187.27792, dec=2.05239)
+
+        assert match is not None
+        assert match.main_id == "3C 273"
+        assert match.otype == "QSO"
+        assert match.ra == pytest.approx(187.278, abs=1e-2)
+        assert match.separation_arcsec < 5.0
+
+    def test_unparseable_coordinates_yield_no_match(self, tmp_path: Path) -> None:
+        garbage = pd.DataFrame({"main_id": ["X"], "ra": ["???"], "dec": ["???"], "otype": ["*"]})
+        client = make_client(tmp_path)
+        with patch.object(SimbadClient, "_query_region", return_value=garbage):
+            # No usable position -> graceful None, not a crash / validation error.
+            assert client.nearest(ra=187.27792, dec=2.05239) is None
+
     def test_query_failure_raises_simbad_error(self, tmp_path: Path) -> None:
         client = make_client(tmp_path)
         with (

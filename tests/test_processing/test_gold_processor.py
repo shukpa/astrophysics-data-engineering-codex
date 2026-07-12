@@ -139,11 +139,14 @@ def make_processor(
     enable_crossmatch: bool = True,
     **crossmatch_overrides,
 ) -> GoldProcessor:
+    # Default BOTH clients to no-op fakes so unit tests never touch the network.
+    # (A real client is only created when GoldProcessor is given None, which
+    # would make "offline" tests issue live Gaia/SIMBAD queries.)
     return GoldProcessor(
         storage_settings=StorageSettings(base_path=tmp_path),
         crossmatch_settings=CrossmatchSettings(cache_enabled=False, **crossmatch_overrides),
-        gaia_client=gaia_client,
-        simbad_client=simbad_client,
+        gaia_client=gaia_client if gaia_client is not None else FakeGaiaClient(None),
+        simbad_client=simbad_client if simbad_client is not None else FakeSimbadClient(None),
         enable_crossmatch=enable_crossmatch,
     )
 

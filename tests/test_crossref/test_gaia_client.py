@@ -16,7 +16,12 @@ import pandas as pd
 import pytest
 
 from src.crossref.gaia_client import GaiaClient
-from src.crossref.utils import angular_separation_arcsec, none_if_nan, query_cache_key
+from src.crossref.utils import (
+    angular_separation_arcsec,
+    coord_to_degrees,
+    none_if_nan,
+    query_cache_key,
+)
 from src.exceptions import CrossReferenceError, GaiaError
 from src.utils.config import CrossmatchSettings
 
@@ -149,6 +154,24 @@ class TestGaiaClientUnit:
         assert "FROM gaiadr3.gaia_source" in query
         assert "CIRCLE" in query
 
+    def test_build_query_orders_by_distance(self, tmp_path: Path) -> None:
+        # TOP must select the NEAREST rows, so the query orders by an aliased
+        # distance (a bare function in ORDER BY is rejected by Gaia's parser).
+        client = make_client(tmp_path)
+        query = client._build_query(QUERY_RA, QUERY_DEC, 5.0)
+        assert "AS dist" in query
+        assert "ORDER BY dist" in query
+        assert query.index("ORDER BY") > query.index("WHERE")
+
+    def test_normalise_drops_server_distance_column(self, tmp_path: Path) -> None:
+        raw = gaia_raw_result()
+        raw["dist"] = [0.002, 0.0005]  # server-side ORDER BY helper column
+        client = make_client(tmp_path)
+        with patch.object(GaiaClient, "_execute_adql", return_value=raw):
+            df = client.cone_search(ra=QUERY_RA, dec=QUERY_DEC)
+        assert "dist" not in df.columns
+        assert "separation_arcsec" in df.columns
+
     def test_execute_adql_enters_proxy_tunnel_when_configured(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -219,6 +242,19 @@ class TestCrossrefUtils:
         key3 = query_cache_key("gaia", 10.0, 20.1, 5.0)
         assert key1 == key2
         assert key1 != key3
+
+    def test_coord_to_degrees_passthrough_and_none(self) -> None:
+        assert coord_to_degrees(187.27792, is_ra=True) == pytest.approx(187.27792)
+        assert coord_to_degrees(2.05239, is_ra=False) == pytest.approx(2.05239)
+        assert coord_to_degrees(None, is_ra=True) is None
+        assert coord_to_degrees(np.nan, is_ra=False) is None
+        assert coord_to_degrees("not-a-coord", is_ra=True) is None
+
+    def test_coord_to_degrees_parses_legacy_sexagesimal(self) -> None:
+        # Legacy SIMBAD strings: RA in hours, Dec in degrees.
+        # 12:29:06.7 h = 187.278 deg; +02:03:08.6 deg = 2.052 deg.
+        assert coord_to_degrees("12 29 06.70", is_ra=True) == pytest.approx(187.278, abs=1e-2)
+        assert coord_to_degrees("+02 03 08.6", is_ra=False) == pytest.approx(2.052, abs=1e-2)
 
 
 @pytest.mark.integration

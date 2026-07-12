@@ -22,7 +22,12 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.crossref.utils import angular_separation_arcsec, none_if_nan, query_cache_key
+from src.crossref.utils import (
+    angular_separation_arcsec,
+    coord_to_degrees,
+    none_if_nan,
+    query_cache_key,
+)
 from src.exceptions import SIMBADError
 from src.models.crossref import SimbadMatch
 from src.utils.config import CrossmatchSettings, get_settings
@@ -83,6 +88,10 @@ class SimbadClient:
 
         try:
             raw = self._query_region(ra, dec, radius)
+            # Normalise inside the guard: a legacy/unexpected result schema must
+            # degrade to a SIMBADError (null enrichment) rather than an
+            # unwrapped exception that aborts the whole gold batch.
+            df = self._normalise(raw, ra, dec)
         except (requests.ConnectionError, requests.Timeout, TimeoutError) as exc:
             raise SIMBADError(
                 f"SIMBAD cone search failed after retries: {exc}",
@@ -93,8 +102,6 @@ class SimbadClient:
                 f"SIMBAD cone search failed: {exc}",
                 details={"ra": ra, "dec": dec, "radius_arcsec": radius},
             ) from exc
-
-        df = self._normalise(raw, ra, dec)
         self._cache_write(ra, dec, radius, df)
         self._log.info(
             "simbad_cone_search_completed",
@@ -116,7 +123,13 @@ class SimbadClient:
         if df.empty:
             return None
 
+        # Rows are sorted nearest-first with unparseable positions last, so the
+        # first row has a usable separation unless every row lacked a position.
         row = df.iloc[0]
+        separation = none_if_nan(row.get("separation_arcsec"))
+        if separation is None:
+            return None
+
         main_id = row.get("main_id")
         if main_id is None:
             return None
@@ -130,9 +143,9 @@ class SimbadClient:
         return SimbadMatch(
             main_id=str(main_id),
             otype=otype,
-            ra=none_if_nan(row.get("ra")),
-            dec=none_if_nan(row.get("dec")),
-            separation_arcsec=float(row["separation_arcsec"]),
+            ra=coord_to_degrees(row.get("ra"), is_ra=True),
+            dec=coord_to_degrees(row.get("dec"), is_ra=False),
+            separation_arcsec=float(separation),
         )
 
     @retry(
@@ -168,16 +181,18 @@ class SimbadClient:
 
         df = df.rename(columns={col: col.lower() for col in df.columns})
 
-        # ra/dec are degrees in modern astroquery; keep rows without a
-        # usable position but only compute separations where possible.
+        # ra/dec are decimal degrees in modern astroquery but sexagesimal
+        # strings in older (still-allowed) versions; coord_to_degrees tolerates
+        # both and yields None for anything unparseable. Rows without a usable
+        # position are kept but sorted last.
         separations: list[float | None] = []
         for row_ra, row_dec in zip(df.get("ra"), df.get("dec"), strict=True):
-            row_ra = none_if_nan(row_ra)
-            row_dec = none_if_nan(row_dec)
-            if row_ra is None or row_dec is None:
+            deg_ra = coord_to_degrees(row_ra, is_ra=True)
+            deg_dec = coord_to_degrees(row_dec, is_ra=False)
+            if deg_ra is None or deg_dec is None:
                 separations.append(None)
                 continue
-            separations.append(angular_separation_arcsec(ra, dec, float(row_ra), float(row_dec)))
+            separations.append(angular_separation_arcsec(ra, dec, deg_ra, deg_dec))
         df["separation_arcsec"] = separations
 
         return df.sort_values("separation_arcsec", na_position="last").reset_index(drop=True)

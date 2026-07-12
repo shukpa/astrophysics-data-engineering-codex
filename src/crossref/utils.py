@@ -28,6 +28,34 @@ def none_if_nan(value: Any) -> Any:
     return value
 
 
+def coord_to_degrees(value: Any, *, is_ra: bool) -> float | None:
+    """Coerce a catalog coordinate to decimal degrees, tolerantly.
+
+    Modern astroquery returns ``ra``/``dec`` as decimal-degree floats. Older
+    (still pip-allowed) versions returned sexagesimal *strings* (RA in hours,
+    Dec in degrees). This accepts either and returns degrees, or None when the
+    value is missing or unparseable — so a legacy schema degrades to "no
+    position" instead of raising and aborting the batch.
+
+    Args:
+        value: Raw coordinate (float degrees, or sexagesimal string).
+        is_ra: True for right ascension (sexagesimal strings are hours).
+    """
+    value = none_if_nan(value)
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        import astropy.units as u
+        from astropy.coordinates import Angle
+
+        unit = u.hourangle if is_ra else u.deg
+        return float(Angle(str(value), unit=unit).to_value(u.deg))
+    except Exception:
+        return None
+
+
 def angular_separation_arcsec(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
     """Great-circle separation between two ICRS positions, in arcseconds."""
     c1 = SkyCoord(ra=ra1, dec=dec1, unit="deg", frame="icrs")

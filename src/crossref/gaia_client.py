@@ -147,12 +147,20 @@ class GaiaClient:
     def _build_query(self, ra: float, dec: float, radius_arcsec: float) -> str:
         radius_deg = radius_arcsec / 3600.0
         columns = ", ".join(GAIA_COLUMNS)
+        # Select an aliased distance and ORDER BY it so TOP keeps the NEAREST
+        # rows. Without this, in a crowded field (or wide radius) with more than
+        # gaia_max_rows sources, an unordered TOP could truncate away the true
+        # nearest counterpart, producing a wrong match + discriminator. (Gaia's
+        # ADQL parser rejects a bare function in ORDER BY, hence the alias.)
         return (
-            f"SELECT TOP {self._config.gaia_max_rows} {columns} "
+            f"SELECT TOP {self._config.gaia_max_rows} {columns}, "
+            f"DISTANCE(POINT('ICRS', ra, dec), "
+            f"POINT('ICRS', {ra:.8f}, {dec:.8f})) AS dist "
             f"FROM {self._config.gaia_catalog} "
             f"WHERE 1 = CONTAINS("
             f"POINT('ICRS', ra, dec), "
-            f"CIRCLE('ICRS', {ra:.8f}, {dec:.8f}, {radius_deg:.10f}))"
+            f"CIRCLE('ICRS', {ra:.8f}, {dec:.8f}, {radius_deg:.10f})) "
+            f"ORDER BY dist ASC"
         )
 
     @retry(
@@ -182,6 +190,9 @@ class GaiaClient:
             return pd.DataFrame(columns=[*GAIA_COLUMNS, "separation_arcsec"])
 
         df = df.rename(columns={col: col.lower() for col in df.columns})
+        # Drop the server-side ORDER BY helper column; separation_arcsec below
+        # (great-circle) is the authoritative distance carried downstream.
+        df = df.drop(columns=[c for c in ("dist",) if c in df.columns])
         df["separation_arcsec"] = [
             angular_separation_arcsec(ra, dec, float(row_ra), float(row_dec))
             for row_ra, row_dec in zip(df["ra"], df["dec"], strict=True)
