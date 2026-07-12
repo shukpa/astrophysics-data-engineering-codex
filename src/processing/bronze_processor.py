@@ -11,7 +11,7 @@ This processor is designed for the "hot path" and does not use LLM calls.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -303,7 +303,7 @@ class BronzeProcessor:
             return self.output_path
         else:
             # Write single file
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             filename = f"alerts_{batch_id}_{timestamp}.parquet"
             output_file = self.output_path / filename
             df.to_parquet(output_file, index=False, engine="pyarrow")
@@ -319,7 +319,7 @@ class BronzeProcessor:
         Returns:
             Path to written file.
         """
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         filename = f"alerts_{batch_id}_{timestamp}.json"
         output_file = self.output_path / filename
         df.to_json(output_file, orient="records", indent=2)
@@ -327,7 +327,7 @@ class BronzeProcessor:
 
     def _generate_batch_id(self) -> str:
         """Generate a unique batch ID."""
-        return f"bronze_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        return f"bronze_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def read_bronze_data(
         self,

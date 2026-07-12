@@ -10,11 +10,20 @@ Key astronomical measures:
 - RA/Dec: Celestial coordinates in degrees
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum, StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def _utcnow() -> datetime:
+    """Return the current time as a timezone-aware UTC datetime.
+
+    Replaces the deprecated ``datetime.utcnow()`` (which returns a naive
+    datetime) with the recommended timezone-aware equivalent.
+    """
+    return datetime.now(UTC)
 
 
 class FilterID(int, Enum):
@@ -206,7 +215,7 @@ class BronzeAlert(BaseModel):
 
     # Ingestion metadata
     ingestion_timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When alert was ingested"
+        default_factory=_utcnow, description="When alert was ingested"
     )
     source: str = Field(default="fink_api", description="Data source identifier")
     source_version: str | None = Field(None, description="Source API version")
@@ -303,7 +312,7 @@ class AlertBatch(BaseModel):
 
     alerts: list[BronzeAlert]
     batch_id: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     source_query: dict[str, Any] | None = None
 
     @property
@@ -351,7 +360,7 @@ class SilverAlert(BaseModel):
     source_object_id: str
     source_candidate_id: int | None = None
     ingestion_timestamp: datetime
-    silver_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    silver_timestamp: datetime = Field(default_factory=_utcnow)
     raw_payload_hash: str | None = None
     raw_payload_json: str | None = None
 
@@ -367,7 +376,7 @@ class SilverBatch(BaseModel):
 
     alerts: list[SilverAlert]
     batch_id: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     source_batch_id: str | None = None
     source_count: int = 0
     rejected_count: int = 0

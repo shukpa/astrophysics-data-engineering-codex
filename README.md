@@ -2,9 +2,11 @@
 
 **Real-time astronomical transient discovery using agentic AI**
 
-An open-source platform for detecting and classifying astronomical transients from telescope survey data. We ingest streaming alerts from ZTF (and soon Rubin/LSST), process them through a Databricks lakehouse architecture, and use AI agents to identify genuinely anomalous events that might represent new physics.
+An open-source platform for detecting and classifying astronomical transients from telescope survey data. We ingest streaming alerts from ZTF (and soon Rubin/LSST), process them through a medallion lakehouse architecture (local Parquet today, Databricks-ready), and use AI agents to identify genuinely anomalous events that might represent new physics.
 
-See `AGENTS.md` for the repository's development instructions and operating conventions.
+Beyond the transient stream, AGD is growing a **multi-probe science layer**: batch ingestion of Euclid open-data catalogues (starting with the Q1 strong-lens sample) and a falsifiable, combined-probe cosmology analysis (DESI + CMB + SNe + weak lensing) that tests whether dark energy and gravity deviate from GR+ΛCDM. The full roadmap and phase state live in [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md).
+
+See [`AGENTS.md`](AGENTS.md) for the repository's development instructions and operating conventions, and [`SCIENCE_GOALS.md`](SCIENCE_GOALS.md) for the science motivation.
 
 ## Vision
 
@@ -53,47 +55,57 @@ We use the medallion (bronze/silver/gold) architecture for progressive data refi
 ## Project Structure
 
 ```
-astrophysics-data-engineering/
+astrophysics-data-engineering-codex/
 ├── src/
 │   ├── __init__.py
-│   ├── exceptions.py           # Custom exception hierarchy (AGDError)
+│   ├── exceptions.py               # Custom exception hierarchy (AGDError)
 │   ├── models/
-│   │   ├── __init__.py
-│   │   └── alerts.py           # Pydantic models for ZTF/Fink alerts
+│   │   └── alerts.py               # Pydantic models for ZTF/Fink alerts
 │   ├── ingestion/
-│   │   └── __init__.py         # (Future: Fink API client)
+│   │   └── fink_api_client.py      # Fink REST API client (retry/backoff)
 │   ├── processing/
-│   │   ├── __init__.py
-│   │   ├── bronze_processor.py # Bronze layer processing
-│   │   └── silver_processor.py # Validation, quality filtering, deduplication
+│   │   ├── bronze_processor.py     # Bronze layer processing
+│   │   └── silver_processor.py     # Validation, quality filtering, deduplication
 │   ├── utils/
-│   │   ├── __init__.py
-│   │   └── config.py           # Pydantic-based configuration
-│   └── agents/
-│       └── __init__.py         # (Future: AI agent implementations)
+│   │   └── config.py               # Pydantic-based runtime configuration
+│   └── agents/                     # (Future: AI agent implementations)
+├── scripts/
+│   └── run_fink_silver_smoke.py    # Live bronze→silver smoke run
 ├── tests/
-│   ├── conftest.py             # Shared pytest fixtures
-│   ├── test_processing/
-│   │   └── test_bronze_processor.py
-│   └── test_utils/
-│       └── test_config.py
-├── pyproject.toml              # Project configuration & dependencies
+│   ├── conftest.py                 # Shared pytest fixtures
+│   ├── test_ingestion/             # Fink API client tests
+│   ├── test_processing/            # Bronze & silver processor tests
+│   ├── test_scripts/               # Smoke-script tests
+│   └── test_utils/                 # Config tests
+├── config/
+│   └── default.yaml                # Non-loaded planning config for future phases
+├── .github/workflows/ci.yml        # CI: ruff + black + pytest (Python 3.11 / 3.12)
+├── AGENTS.md                       # Provider-neutral agent operating contract
+├── AGD_FORWARD_PLAN.md             # Roadmap & per-phase execution plan
+├── SCIENCE_GOALS.md                # Science motivation
+├── pyproject.toml                  # Project configuration & dependencies
 └── README.md
 ```
 
 ## Current Status
 
-**Phase 1: Foundation** — Building the core infrastructure:
+**Implemented — ZTF/Fink transient pipeline (bronze → silver):**
 
-- [x] Project structure and configuration
+- [x] Project structure and Pydantic runtime configuration
 - [x] Custom exception hierarchy
 - [x] Pydantic models for ZTF alerts
 - [x] Bronze layer processor
-- [x] Test framework
 - [x] Fink API client with retry logic
-- [x] Silver layer processor
-- [ ] Gold layer with cross-matching
-- [ ] Basic triage agent
+- [x] Silver layer processor (quality gates, dedup, provenance)
+- [x] Test framework + live bronze→silver smoke script
+- [x] Repo convergence (Phase 0): CI, single config source of truth, timezone-aware datetimes
+
+**Next — see [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md) for the full plan:**
+
+- [ ] Gold layer + Gaia/SIMBAD cross-match (`feat/gold-crossref`)
+- [ ] Euclid Q1 open-data ingestion + strong-lens catalogue (`feat/euclid-q1`)
+- [ ] Multi-probe constraint & lensing science harness (`feat/constraint-harness`)
+- [ ] Lens-aware anomaly agent (`feat/anomaly-agent`)
 
 ## Getting Started
 
@@ -128,7 +140,7 @@ STORAGE_BASE_PATH=./data
 FINK_TIMEOUT_SECONDS=30
 ```
 
-The runtime source of truth is `src/utils/config.py`. `config/default.yaml` is currently a planning/defaults artifact and is not loaded by the application runtime.
+The **single runtime source of truth** is `src/utils/config.py` (Pydantic settings, overridable via environment variables / `.env`). `config/default.yaml` is **not loaded** by the application — it is a planning reference for configuration that future phases will implement in Pydantic, and it must not duplicate any runtime value. See `AGENTS.md` → "Configuration".
 
 ### Running Tests
 
@@ -245,17 +257,37 @@ Science demands rigor:
 
 ## Roadmap
 
-### Phase 1: Foundation
-- Core infrastructure, bronze/silver layers, Fink client
+The authoritative, phase-by-phase plan (with acceptance criteria and data-source
+detail) is [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md). Summary:
 
-### Phase 2: Pipeline
-- Silver/gold layers, cross-matching with Gaia/SIMBAD, basic ML classification
+| Phase | Branch | Focus |
+|-------|--------|-------|
+| **0 — Repo convergence** ✅ | `chore/repo-convergence` | CI, single config source of truth, timezone-aware datetimes, hardened agent contract |
+| **1 — Gold + cross-match** | `feat/gold-crossref` | Silver→gold; Gaia DR3 / SIMBAD cone-search cross-match; star/extragalactic discrimination |
+| **2 — Euclid Q1 ingestion** | `feat/euclid-q1` | Batch TAP/ADQL ingestion of Euclid open data (MER catalogue + Q1 strong-lens sample) through the medallion; transient↔lens-field cross-match |
+| **3 — Constraint & lensing harness** | `feat/constraint-harness` | Falsifiable multi-probe cosmology fit (DESI + CMB + SNe + weak lensing → w₀, wₐ, γ vs GR+ΛCDM) and strong-lens statistics |
+| **4 — Anomaly agent** | `feat/anomaly-agent` | Lens-aware, provider-neutral warm-path anomaly assessment + nightly report |
 
-### Phase 3: Agents
-- Provider-neutral triage agent, anomaly detection, report generation
+### Euclid data landscape
 
-### Phase 4: Production
-- Databricks deployment, Kafka streaming, monitoring dashboards
+Euclid ingestion (Phase 2) targets the ESA/IRSA open-data releases via
+`astroquery.esa.euclid` (TAP/ADQL): **Q1** (out; strong-lens capability demo),
+with the harness designed to swap cleanly to **DR1-Foundation** (~1900 deg²,
+Nov 2026) — the Stage-IV weak-lensing upgrade. Euclid is treated as batch
+catalogue ingestion inside the same bronze→silver→gold medallion, not a second
+pipeline.
+
+### Science framing (honest by design)
+
+No single dataset "detects a new dimension." The multi-probe harness constrains
+the dark-energy equation of state **(w₀, wₐ)** and the growth index **γ**;
+extra-dimensional / braneworld models earn or lose credibility by where those
+land versus GR+ΛCDM. Every conclusion traces to a computed number. See
+[`SCIENCE_GOALS.md`](SCIENCE_GOALS.md) and `AGD_FORWARD_PLAN.md` §2.4.
+
+### Longer horizon
+- Databricks/Delta deployment, Kafka streaming, monitoring dashboards
+- Rubin/LSST-scale ingestion
 
 ## Contributing
 

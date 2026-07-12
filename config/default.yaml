@@ -1,86 +1,60 @@
-# Agentic Galactic Discovery — Default Configuration
-# Override per-environment in development.yaml / production.yaml
+# Agentic Galactic Discovery — Planning Configuration (NOT loaded at runtime)
+#
+# ┌───────────────────────────────────────────────────────────────────────────┐
+# │ SINGLE SOURCE OF TRUTH                                                     │
+# │                                                                           │
+# │ Runtime configuration lives ONLY in `src/utils/config.py` (Pydantic       │
+# │ settings, overridable via environment variables / .env). Nothing loads    │
+# │ this file today.                                                          │
+# │                                                                           │
+# │ This file is a *planning reference* for configuration that future phases  │
+# │ (see AGD_FORWARD_PLAN.md) will implement in Pydantic. It intentionally     │
+# │ contains ONLY values that have no code home yet. It must NOT duplicate     │
+# │ any value already defined in `src/utils/config.py` or in processor code   │
+# │ (e.g. the silver rejection thresholds live in                             │
+# │ `src/processing/silver_processor.py`).                                    │
+# │                                                                           │
+# │ When a phase implements one of these sections, move it into Pydantic and  │
+# │ delete it here so there is never a second source of truth.                │
+# └───────────────────────────────────────────────────────────────────────────┘
 
 # =============================================================================
-# Data Sources
+# Catalog cross-match (Phase 1 — feat/gold-crossref; not yet implemented)
+# Gaia DR3 / SIMBAD cone-search defaults for the gold cross-reference layer.
 # =============================================================================
-sources:
-  fink:
-    api_base_url: "https://api.fink-portal.org"
-    api_version: "v1"
-    default_output_format: "json"
-    request_timeout_seconds: 30
-    max_retries: 3
-    retry_backoff_factor: 2.0
-    rate_limit_requests_per_minute: 60
-
-  antares:
-    api_base_url: "https://antares.noirlab.edu"
-    request_timeout_seconds: 30
-    max_retries: 3
-
-  catalogs:
-    simbad:
-      timeout_seconds: 30
-      default_radius_arcsec: 5.0
-    gaia:
-      catalog: "gaiadr3.gaia_source"
-      timeout_seconds: 60
-      default_radius_degrees: 0.001
+crossmatch:
+  simbad:
+    timeout_seconds: 30
+    default_radius_arcsec: 5.0
+  gaia:
+    catalog: "gaiadr3.gaia_source"
+    timeout_seconds: 60
+    default_radius_arcsec: 5.0
+  # Radius used when associating silver transients with catalog / lens fields.
+  cross_reference_radius_arcsec: 5.0
 
 # =============================================================================
-# Processing Pipeline
-# =============================================================================
-pipeline:
-  # Medallion architecture settings
-  bronze:
-    # Store raw alerts with minimal transformation
-    partition_by: ["observation_date"]
-    file_format: "parquet"
-    compression: "snappy"
-
-  silver:
-    # Cleaned, validated, deduplicated
-    partition_by: ["observation_date", "fink_class"]
-    deduplication_key: "candidId"
-    # Reject alerts with these conditions
-    rejection_filters:
-      - "magpsf IS NULL"
-      - "sigmapsf > 1.0"
-      - "rb < 0.2"            # real/bogus score too low
-
-  gold:
-    # Enriched with cross-references and derived features
-    partition_by: ["observation_date", "fink_class"]
-    cross_reference_radius_arcsec: 5.0
-
-# =============================================================================
-# Agent Configuration
+# Agent configuration (Phase 4 — feat/anomaly-agent; not yet implemented)
+# Provider-neutral: "model" is a placeholder resolved by the runtime the
+# operator selects (see AGENTS.md — no provider is baked in).
 # =============================================================================
 agents:
-  orchestrator:
-    model: "provider-model"
-    max_tokens: 2000
-    temperature: 0.3          # Low temperature for reliable classification
-
   triage:
     model: "provider-model"
     max_tokens: 1000
     temperature: 0.2
-    # Confidence thresholds for routing
     high_confidence_threshold: 0.85
     anomaly_score_threshold: 0.7
 
   anomaly:
     model: "provider-model"
     max_tokens: 3000
-    temperature: 0.4          # Slightly higher for creative pattern finding
-    # Statistical thresholds
+    temperature: 0.4
     outlier_sigma_threshold: 3.0
     minimum_detections_for_analysis: 5
 
 # =============================================================================
-# Classification
+# Classification taxonomy (used by future triage / reporting)
 # =============================================================================
 classification:
   # Priority levels for follow-up
@@ -107,16 +81,12 @@ classification:
     - "Solar System candidate"
 
 # =============================================================================
-# Output & Notifications
+# Output & notifications (Phase 4 — nightly report; not yet implemented)
 # =============================================================================
 output:
-  dashboard:
-    port: 8501
-    refresh_interval_seconds: 60
-
   nightly_digest:
     enabled: true
-    generation_time_utc: "12:00"   # Noon UTC, after most northern hemisphere nights
+    generation_time_utc: "12:00"   # Noon UTC, after most northern-hemisphere nights
     include_top_n_events: 20
     include_anomaly_summary: true
 
@@ -128,26 +98,3 @@ output:
         enabled: false
       discord:
         enabled: false
-
-# =============================================================================
-# Storage (Local Development)
-# =============================================================================
-storage:
-  local:
-    base_path: "./data"
-    bronze_path: "./data/bronze"
-    silver_path: "./data/silver"
-    gold_path: "./data/gold"
-    logs_path: "./logs"
-
-# =============================================================================
-# Logging
-# =============================================================================
-logging:
-  level: "INFO"
-  format: "json"            # "json" for structured, "console" for human-readable
-  file:
-    enabled: true
-    path: "./logs/agd.log"
-    max_size_mb: 100
-    backup_count: 5

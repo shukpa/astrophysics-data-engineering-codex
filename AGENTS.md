@@ -2,23 +2,58 @@
 
 ## Project: Agentic Galactic Discovery (AGD)
 
-This file is the primary operating context for Codex sessions in this repo.
+This file is the **single, provider-neutral operating contract for every agent**
+that works in this repo, regardless of toolchain (Claude/Fable, Codex/GPT, or
+other). It is the primary operating context. There are intentionally **no**
+provider-specific context files (e.g. no `CLAUDE.md`, no `CLAUDE_CODE_CONTEXT.md`);
+their removal was deliberate. Do not re-introduce them.
 
 ## Mission
 
-Build an open-source platform for real-time astronomical transient discovery. The system ingests alert data from Fink/ZTF now and should evolve toward Rubin/LSST-scale processing, with a strict medallion architecture and scientifically defensible provenance.
+Build an open-source platform for real-time astronomical transient discovery. The
+system ingests alert data from Fink/ZTF now and should evolve toward Rubin/LSST-scale
+processing, with a strict medallion architecture and scientifically defensible
+provenance. The forward roadmap (gold layer, Euclid open-data integration, and a
+falsifiable multi-probe cosmology thread) lives in `AGD_FORWARD_PLAN.md`.
 
-## How Codex Should Start Work
+## Multi-Agent Operating Model
 
-1. Read this file first.
-2. Scan the current repo state before proposing changes: `rg --files`, `git status --short`, and the relevant files under `src/`, `tests/`, and `config/`.
-3. Prefer the Pydantic settings in `src/utils/config.py` as the runtime source of truth.
-4. Treat `config/default.yaml` as a planning artifact unless code is added to load it.
-5. Run targeted tests for the area being changed, then run broader validation if the environment has the required tools installed.
+This repo is evolved by multiple AI toolchains in rotation. Coordination happens
+through **three artifacts only**:
+
+1. `AGENTS.md` — the rules (this file).
+2. `AGD_FORWARD_PLAN.md` — the roadmap and per-phase state.
+3. PR history — provenance of what changed and why.
+
+Rules for every agent:
+
+- **Provider neutrality is mandatory.** Do not add provider-specific context
+  files, model/vendor assumptions, or tooling lock-in anywhere in the repo. The
+  `model` field in planning config is a placeholder resolved by whichever runtime
+  the operator selects.
+- **One branch and one PR per phase.** Branch names follow the plan
+  (`chore/...`, `feat/...`). Keep changes minimal and scoped to the phase.
+- **Hand off explicitly.** Every PR description must state what changed and what
+  the next agent needs to know, so a different toolchain can pick up any phase cold.
+- **CI is the enforcement layer.** `.github/workflows/ci.yml` runs ruff, black,
+  and the test suite on every push/PR to `main`. Keep it green; keep the checks in
+  sync with the Commands below.
+
+## How Any Agent Should Start Work
+
+1. Read this file first, then `AGD_FORWARD_PLAN.md` for current phase state.
+2. Scan the current repo state before proposing changes: `rg --files`,
+   `git status --short`, and the relevant files under `src/`, `tests/`, and `config/`.
+3. `src/utils/config.py` (Pydantic settings) is the **single runtime source of
+   truth** for configuration.
+4. `config/default.yaml` is a **non-loaded planning reference** only — see
+   "Configuration" below. Do not treat it as runtime config.
+5. Run targeted tests for the area being changed, then the broader validation
+   (ruff + black + pytest) that CI will run.
 
 ## Quick Reference
 
-- Python: 3.11+
+- Python: 3.11+ (CI tests 3.11 and 3.12)
 - Style: `ruff` + `black`, type hints, Google docstrings
 - Testing: `pytest tests/ -v`
 - Runtime config: `src/utils/config.py`
@@ -27,37 +62,70 @@ Build an open-source platform for real-time astronomical transient discovery. Th
 ## Commands
 
 ```bash
-# Run tests
-pytest tests/ -v
+# Install (with dev tooling)
+pip install -e ".[dev]"
+
+# Run tests (unit + data-quality; integration deselected, as CI does)
+pytest -m "not integration"
 
 # Run linter
-ruff check src/ tests/
+ruff check src/ scripts/ tests/
 
-# Format code
-black src/ tests/
+# Check formatting (CI fails on unformatted code)
+black --check src/ scripts/ tests/
+
+# Auto-format
+black src/ scripts/ tests/
 ```
+
+## Configuration (single source of truth)
+
+- **`src/utils/config.py` is the only runtime configuration.** Pydantic settings
+  with environment-variable / `.env` overrides. All runtime values live here.
+- **`config/default.yaml` is a non-loaded planning artifact.** Nothing reads it.
+  It holds only forward-looking config for phases not yet implemented (catalog
+  cross-match radii, anomaly-agent thresholds, classification taxonomy, nightly
+  digest). It must **not** duplicate any value already defined in Pydantic or in
+  processor code (e.g. the silver rejection thresholds live in
+  `src/processing/silver_processor.py`). When a phase implements one of these
+  sections, move it into Pydantic and delete it from the YAML.
 
 ## Architecture Rules
 
-1. No LLM calls in the hot path. Use ML models for real-time classification and reserve LLMs for flagged events.
-2. Every function that touches external APIs must have retry logic and timeout handling.
+1. No LLM calls in the hot path. Use ML models for real-time classification and
+   reserve LLMs for flagged events (warm path only).
+2. Every function that touches external APIs must have retry logic and timeout
+   handling.
 3. Preserve the medallion flow: Bronze to Silver to Gold. Do not skip layers.
 4. Test everything: unit, integration, and data-quality checks.
 5. Preserve provenance so every derived result traces back to source alert IDs.
+6. Use timezone-aware UTC datetimes (`datetime.now(UTC)`); naive `datetime.utcnow()`
+   is banned and enforced by ruff `DTZ` rules.
+7. Analysis/science code (notebooks, `src/analysis/`) may depend on the pipeline
+   (gold); the pipeline must never import analysis code.
 
 ## Current Technical Direction
 
-- Fink REST API is the Phase 1 ingestion source.
-- Bronze and silver processing are implemented; gold and agent orchestration are still evolving.
-- The repository supports agent-assisted development through the instructions in this file.
-- No production agent runtime or provider has been selected yet.
+- Fink REST API is the Phase 1 ingestion source; bronze and silver processing are
+  implemented (streaming ZTF alerts through the medallion).
+- **Phase 0 (repo convergence) landed:** CI, single config source of truth,
+  timezone-aware datetimes, and this hardened contract.
+- Gold layer, Gaia/SIMBAD cross-match, Euclid open-data ingestion, the multi-probe
+  constraint harness, and the anomaly agent are the next phases — see
+  `AGD_FORWARD_PLAN.md`.
+- No production agent runtime or provider has been selected; the platform stays
+  provider-neutral by design.
 
 ## Key Files
 
+- `AGD_FORWARD_PLAN.md`: roadmap and per-phase execution plan
+- `.github/workflows/ci.yml`: CI (ruff + black + pytest on 3.11 / 3.12)
 - `src/ingestion/fink_api_client.py`: primary alert ingestion client
 - `src/processing/bronze_processor.py`: bronze layer processing
+- `src/processing/silver_processor.py`: silver layer processing (quality gates,
+  dedup, rejection thresholds)
 - `src/utils/config.py`: runtime settings and environment-variable contract
-- `config/default.yaml`: planning/default config artifact, not loaded at runtime today
+- `config/default.yaml`: non-loaded planning config for future phases
 - `tests/conftest.py`: shared test fixtures
 
 ## Working Rules
@@ -65,4 +133,5 @@ black src/ tests/
 - Prefer `rg` for search and `rg --files` for file discovery.
 - Keep changes minimal and targeted.
 - Do not introduce provider-specific assumptions unless the code actually uses them.
-- If docs and code disagree, fix the docs or fix the code so one source of truth remains clear.
+- If docs and code disagree, fix the docs or fix the code so one source of truth
+  remains clear.

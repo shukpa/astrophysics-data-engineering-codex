@@ -11,7 +11,7 @@ import hashlib
 import json
 import math
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -302,19 +302,19 @@ class SilverProcessor:
             )
             return self.output_path
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_file = self.output_path / f"silver_alerts_{batch_id}_{timestamp}.parquet"
         df.to_parquet(output_file, index=False, engine="pyarrow")
         return output_file
 
     def _write_json(self, df: pd.DataFrame, batch_id: str) -> Path:
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_file = self.output_path / f"silver_alerts_{batch_id}_{timestamp}.json"
         df.to_json(output_file, orient="records", indent=2)
         return output_file
 
     def _generate_batch_id(self) -> str:
-        return f"silver_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        return f"silver_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def _serialize_raw_payload(self, payload: dict[str, Any] | None) -> str | None:
         if payload is None:
