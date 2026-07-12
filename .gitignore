@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.py[cod]
+
+# Runtime data + catalog cache (default StorageSettings base_path is ./data)
+data/
+logs/
