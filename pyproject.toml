@@ -86,6 +86,7 @@ select = [
     "UP",     # pyupgrade
     "ARG",    # flake8-unused-arguments
     "SIM",    # flake8-simplify
+    "DTZ",    # flake8-datetimez (require timezone-aware datetimes)
 ]
 ignore = [
     "E501",   # line too long (handled by black)

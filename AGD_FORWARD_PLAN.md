@@ -62,14 +62,18 @@ For testing whether gravity/dark energy deviates from GR+ΛCDM in ways extra-dim
 2. **CMB — Planck (legacy) + ACT DR6** — the high-z anchor that breaks the H₀–r_d and w₀–w_a degeneracies. Planck 2018 chains as baseline; ACT DR6 tightens lensing and small-scale spectra. S₈ growth tension lives here. Public chains plug into `cobaya`/`emcee`.
 3. **Type Ia SNe — Pantheon+ / Union3 / DES-SN5YR** — third leg of the combined-probe fit. DES-SN5YR (2024) is the most recent large sample; public tables, trivial to fold into the DESI fit.
 4. **KiDS-1000 + DES Y3 (weak lensing, pre-Euclid)** — the current Stage-III growth-of-structure measurements. Use these for real S₈/γ constraints *today* rather than waiting for Euclid DR1, which then upgrades this axis by an order of magnitude.
-5. **Rubin/LSST** (in AGD) — not a near-term dark-energy-fit source; eventually the Northern-hemisphere lensing counterpart to Euclid via DESC.
+5. **Rubin/LSST + ZTF** (in AGD) — not a dark-energy-fit source directly, but the counterpart-discovery engine for the GW standard-siren channel (see 2.4, channel 3) — which is the most direct extra-dimension test available, and the one AGD's existing architecture serves natively. Eventually also the Northern-hemisphere lensing counterpart to Euclid via DESC.
+6. **LIGO/Virgo/KAGRA public alerts** (new) — GW triggers via GCN/GraceDB; combined with an EM counterpart from the alert stream, each BNS event is a d_L^GW vs d_L^EM graviton-leakage test. Zero-cost data (public, low volume), high physics leverage.
 
 ### 2.4 Honest framing (the project's own convergence rule)
 
-None of these datasets "detect a dimension." They constrain **(w₀, w_a)** and the **growth index γ**. A braneworld/DGP-type model earns or loses credibility by whether those parameters land where it predicts versus where GR+ΛCDM predicts. That is the falsifiable test — structurally the same combined-probe fit already planned for DESI, with more probes stacked in. Two consequences for this plan:
+None of these datasets "detect a dimension." Extra-dimensional models are constrained through three falsifiable channels, and the pipeline must keep **agnostic anomaly discovery** decoupled from **hypothesis testing** (biasing the anomaly hunt toward a preferred explanation manufactures confirmations):
 
-- The **primary** extra-dimensional constraint channel is the multi-probe fit (Phase 3a), not Euclid Q1.
-- Direct KK/RS-II corrections to individual lensing observables at galactic scales are suppressed by ~(ℓ/r)² and unmeasurable; the strong-lens harness (Phase 3b) is a *statistics* instrument (profiles, abundances, substructure) and a DR1-ready asset, and its notebook must say so explicitly.
+1. **Combined-probe parameters (w₀, w_a, γ, S₈)** — Phase 3a. Ensemble statistics; a braneworld/DGP-type model earns or loses credibility by where these land vs GR+ΛCDM. Available now (DESI+CMB+SN+Stage-III lensing).
+2. **Lens/growth statistics** — Phase 3b. Direct KK/RS-II corrections to individual lensing observables are suppressed by ~(ℓ/r)² and unmeasurable (lab torsion-balance limits already push RS-II to sub-mm scales; self-accelerating DGP is ruled out). The strong-lens harness is a *statistics* instrument and a DR1-ready asset; its notebook must say so explicitly.
+3. **GW standard sirens (graviton leakage)** — Phase 5, and the reason the ZTF/Rubin time-domain pipeline is itself an extra-dimension instrument. If gravitons leak into extra dimensions, GW sources appear dimmer than their EM counterparts (d_L^GW > d_L^EM). GW170817 + kilonova constrained large spacetime dimensions to D ≈ 4.0 ± ~0.1 (Pardo, Fishbach, Holz & Spergel 2018, JCAP). Improving this requires exactly AGD's core competency: rapid optical-counterpart identification in alert streams after GW triggers. This is the only channel where a single well-measured event carries dimensional information.
+
+**Design consequence:** single anomalous light curves are, with overwhelming prior, instrumental → astrophysical → only then gravitational. The anomaly agent flags weirdness agnostically; the constraint notebooks (3a/3b) and the siren channel (5) do the extra-dimensional physics. Do not conflate the two in code or in claims.
 
 ---
 
@@ -162,6 +166,16 @@ None of these datasets "detect a dimension." They constrain **(w₀, w_a)** and 
 
 **Acceptance:** agent runs on a real nightly batch; report generated; zero LLM calls in bronze/silver/gold path.
 
+### Phase 5 — Multi-messenger GW counterpart channel  `feat/gw-counterparts`
+*The channel where the time-domain pipeline itself does extra-dimensional physics. Builds directly on Phases 1 and 4.*
+
+1. `src/ingestion/gw_alert_client.py` — consume LIGO/Virgo/KAGRA public alerts (GCN Kafka / GraceDB API): event ID, skymap (HEALPix), distance posterior, source classification (BNS/NSBH probability). Same client pattern: retry, timeout, provenance, local cache.
+2. Cross-match job: on a GW trigger with non-trivial BNS probability, filter incoming Fink/ZTF alerts against the skymap credible region + distance-consistent host constraints; Fink's own `Kilonova candidate` tag is a first-class input. Flag `gw_counterpart_candidate` in gold.
+3. Escalation: `gw_counterpart_candidate` outranks everything — counterpart science is time-critical (hours). Nightly report gets a GW section.
+4. `notebooks/gw_siren_dimensions.ipynb` — the physics: reproduce the GW170817 D = 4 constraint from published d_L^GW and EM host distance (validation cell), then a forecast cell: how the constraint on graviton leakage / number of large dimensions scales with N well-localised BNS events with counterparts in the Rubin era. Staged like 3a/3b: reproduce standard result first, quantify sensitivity, only then discuss braneworld parameter space.
+
+**Acceptance:** GW alert client tested against archived GraceDB events; cross-match runs end-to-end on a replayed historical trigger (GW170817-era ZTF data or simulated stream); notebook reproduces the published D ≈ 4.0 ± 0.1 constraint before any forecasting.
+
 ### November 2026 checkpoint — DR1-Foundation
 When DR1-Foundation drops (~1900 deg²): re-run Phase 2 ingestion with `DR tag = DR1F`; re-run notebook 3b (the sensitivity floor tells you immediately which questions just became answerable); fold Euclid weak-lensing growth constraints into notebook 3a when consortium likelihoods/chains publish. This is the order-of-magnitude upgrade to the lensing axis.
 
@@ -181,3 +195,5 @@ Then proceed phase by phase, one branch and PR each — regardless of which tool
 - Euclid Q2 (Galactic Bulge Survey, 24 Jun 2026): https://www.euclid-ec.org/science/q2/ ; https://www.cosmos.esa.int/web/euclid/q2-data-release
 - DR1 revised timeline (DR1-Foundation Nov 2026, full DR1 mid-2027): https://www.cosmos.esa.int/web/euclid/euclid-dr1 ; https://telescoper.blog/2026/06/16/euclid-update-revised-timeline/
 - DESI DR2 BAO: https://arxiv.org/abs/2503.14738
+- GW dimensional constraint (D = 4 from GW170817): Pardo, Fishbach, Holz & Spergel 2018, JCAP — https://arxiv.org/abs/1801.08160
+- GW public alerts: https://gracedb.ligo.org and GCN Kafka (https://gcn.nasa.gov)
