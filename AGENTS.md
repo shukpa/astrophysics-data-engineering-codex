@@ -115,7 +115,11 @@ black src/ scripts/ tests/
   (retry + Parquet cache), gold processor with nearest-neighbour enrichment,
   star/extragalactic discriminator, light-curve features, and provenance
   pointers (no raw payload JSON in gold). Catalog outages degrade gracefully to
-  null match columns.
+  null match columns. Note: astroquery's Gaia TAP layer ignores `HTTPS_PROXY`;
+  in a CONNECT-proxy environment set `CROSSMATCH_TAP_PROXY_URL` (and
+  `CROSSMATCH_TAP_CA_BUNDLE` if the proxy re-terminates TLS) so the Gaia client
+  tunnels through it. Unset by default = direct network. SIMBAD needs nothing
+  (it uses `requests`, which honours `HTTPS_PROXY`).
 - Euclid open-data ingestion, the multi-probe constraint harness, the anomaly
   agent, and the GW counterpart channel are the next phases — see
   `AGD_FORWARD_PLAN.md`.

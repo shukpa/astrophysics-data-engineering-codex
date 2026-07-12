@@ -22,6 +22,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from src.crossref.tap_proxy import tap_proxy_tunnel
 from src.crossref.utils import angular_separation_arcsec, none_if_nan, query_cache_key
 from src.exceptions import GaiaError
 from src.models.crossref import GaiaMatch
@@ -163,14 +164,17 @@ class GaiaClient:
         """Run an ADQL query against the Gaia TAP service.
 
         Isolated so tests can replace it with canned results. Imports
-        astroquery lazily to keep module import light.
+        astroquery lazily to keep module import light. When a TAP proxy is
+        configured, the astroquery connection is tunnelled through it (a
+        no-op otherwise), since astroquery's TAP layer ignores HTTPS_PROXY.
         """
-        from astroquery.gaia import Gaia
+        with tap_proxy_tunnel(self._config.tap_proxy_url, self._config.tap_ca_bundle):
+            from astroquery.gaia import Gaia
 
-        self._log.debug("gaia_adql_launch", query=query)
-        job = Gaia.launch_job(query)
-        table = job.get_results()
-        return table.to_pandas()
+            self._log.debug("gaia_adql_launch", query=query)
+            job = Gaia.launch_job(query)
+            table = job.get_results()
+            return table.to_pandas()
 
     def _normalise(self, df: pd.DataFrame, ra: float, dec: float) -> pd.DataFrame:
         """Lower-case columns, compute separations, sort nearest first."""

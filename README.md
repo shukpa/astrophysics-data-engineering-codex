@@ -156,10 +156,16 @@ The **single runtime source of truth** is `src/utils/config.py` (Pydantic settin
 
 ```bash
 pytest                          # Run all tests
-pytest -m "not integration"     # Skip integration tests
-AGD_RUN_INTEGRATION_TESTS=1 pytest -m integration  # Run live Fink API tests
+pytest -m "not integration"     # Skip integration tests (what CI runs)
+AGD_RUN_INTEGRATION_TESTS=1 pytest -m integration  # Live Fink/Gaia queries
 pytest --cov=src                # With coverage report
 ```
+
+Integration tests hit live services (Fink, Gaia). astroquery's Gaia TAP layer
+ignores `HTTPS_PROXY`, so behind a CONNECT proxy also export
+`CROSSMATCH_TAP_PROXY_URL` (and `CROSSMATCH_TAP_CA_BUNDLE` if the proxy
+re-terminates TLS) — the Gaia client then tunnels through it. In a normal
+direct-network environment none of this is needed.
 
 ### Basic Usage
 

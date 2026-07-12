@@ -149,6 +149,54 @@ class TestGaiaClientUnit:
         assert "FROM gaiadr3.gaia_source" in query
         assert "CIRCLE" in query
 
+    def test_execute_adql_enters_proxy_tunnel_when_configured(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import contextlib
+        import sys
+        import types
+
+        import astropy.table
+
+        calls: dict[str, str | None] = {}
+
+        @contextlib.contextmanager
+        def spy_tunnel(url, ca_bundle=None):
+            calls["url"] = url
+            calls["ca"] = ca_bundle
+            yield
+
+        monkeypatch.setattr("src.crossref.gaia_client.tap_proxy_tunnel", spy_tunnel)
+
+        class FakeJob:
+            def get_results(self):
+                return astropy.table.Table(
+                    {
+                        "source_id": [1],
+                        "ra": [QUERY_RA],
+                        "dec": [QUERY_DEC],
+                        "phot_g_mean_mag": [15.0],
+                        "parallax": [1.0],
+                        "parallax_error": [0.1],
+                        "pmra": [1.0],
+                        "pmra_error": [0.1],
+                        "pmdec": [1.0],
+                        "pmdec_error": [0.1],
+                    }
+                )
+
+        fake_gaia = types.ModuleType("astroquery.gaia")
+        fake_gaia.Gaia = types.SimpleNamespace(launch_job=lambda _query: FakeJob())
+        monkeypatch.setitem(sys.modules, "astroquery.gaia", fake_gaia)
+
+        client = make_client(
+            tmp_path, tap_proxy_url="http://127.0.0.1:36389", tap_ca_bundle="/root/.ccr/ca.crt"
+        )
+        match = client.nearest(ra=QUERY_RA, dec=QUERY_DEC)
+
+        assert calls == {"url": "http://127.0.0.1:36389", "ca": "/root/.ccr/ca.crt"}
+        assert match is not None and match.source_id == 1
+
 
 class TestCrossrefUtils:
     """Tests for shared cross-reference helpers."""
@@ -182,14 +230,34 @@ class TestGaiaClientIntegration:
     """Live Gaia TAP integration test with a tiny cone.
 
     Run with: AGD_RUN_INTEGRATION_TESTS=1 pytest -m integration
+
+    In a CONNECT-proxy environment (astroquery ignores HTTPS_PROXY), also set
+    CROSSMATCH_TAP_PROXY_URL (and CROSSMATCH_TAP_CA_BUNDLE if the proxy
+    re-terminates TLS); make_client reads them from env via CrossmatchSettings.
+
+    Target is 3C 273 — a quasar with no measurable proper motion, so its Gaia
+    DR3 (epoch 2016) position coincides with its ICRS catalog position. High
+    proper-motion stars are deliberately avoided: their epoch-2016 position can
+    sit arcminutes from their J2000 coordinates, outside any small cone.
     """
 
-    def test_live_cone_search_barnards_star(self, tmp_path: Path) -> None:
-        # Barnard's Star: bright, isolated, huge parallax and proper motion.
-        client = make_client(tmp_path, radius_arcsec=30.0)
-        match = client.nearest(ra=269.45207, dec=4.69339, radius_arcsec=30.0)
+    # 3C 273 (ICRS, J2000): bright quasar, motionless, always in the catalog.
+    THREE_C_273_RA = 187.27792
+    THREE_C_273_DEC = 2.05239
 
+    def test_live_cone_search_quasar(self, tmp_path: Path) -> None:
+        client = make_client(tmp_path, radius_arcsec=5.0)
+        match = client.nearest(ra=self.THREE_C_273_RA, dec=self.THREE_C_273_DEC)
+
+        # Connectivity + real astrometry returned for a known source.
         assert match is not None
-        assert match.separation_arcsec < 30.0
-        assert match.parallax is not None and match.parallax > 100  # ~547 mas
-        assert match.pm_total is not None and match.pm_total > 1000  # ~10 arcsec/yr
+        assert match.source_id > 0
+        assert match.separation_arcsec < 5.0
+        assert match.g_mag is not None and 11.0 < match.g_mag < 14.0  # ~12.8
+
+        # Physics: an extragalactic source shows no significant parallax, so it
+        # must NOT read as stellar via the parallax channel.
+        if match.parallax_snr is not None:
+            assert not (
+                match.parallax is not None and match.parallax > 0 and match.parallax_snr >= 5.0
+            )

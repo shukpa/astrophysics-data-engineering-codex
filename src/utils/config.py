@@ -153,6 +153,12 @@ class CrossmatchSettings(BaseSettings):
             significant (stellar) parallax detection.
         pm_snr_threshold: Minimum total-proper-motion SNR for a significant
             (stellar) proper-motion detection.
+        tap_proxy_url: Optional CONNECT-proxy URL for Gaia TAP queries. When
+            set, the Gaia client tunnels astroquery's TAP connections through
+            it (astroquery ignores HTTPS_PROXY). Leave unset for direct
+            network access. SIMBAD does not need this (it uses requests).
+        tap_ca_bundle: Optional CA bundle to trust when tap_proxy_url is set
+            and the proxy re-terminates TLS with its own certificate.
     """
 
     model_config = SettingsConfigDict(env_prefix="CROSSMATCH_")
@@ -167,6 +173,8 @@ class CrossmatchSettings(BaseSettings):
     cache_path: str = "cache/crossref"
     parallax_snr_threshold: float = Field(default=5.0, ge=0.0)
     pm_snr_threshold: float = Field(default=5.0, ge=0.0)
+    tap_proxy_url: str | None = None
+    tap_ca_bundle: str | None = None
 
 
 class LoggingSettings(BaseSettings):
