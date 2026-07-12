@@ -267,6 +267,7 @@ detail) is [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md). Summary:
 | **2 — Euclid Q1 ingestion** | `feat/euclid-q1` | Batch TAP/ADQL ingestion of Euclid open data (MER catalogue + Q1 strong-lens sample) through the medallion; transient↔lens-field cross-match |
 | **3 — Constraint & lensing harness** | `feat/constraint-harness` | Falsifiable multi-probe cosmology fit (DESI + CMB + SNe + weak lensing → w₀, wₐ, γ vs GR+ΛCDM) and strong-lens statistics |
 | **4 — Anomaly agent** | `feat/anomaly-agent` | Lens-aware, provider-neutral warm-path anomaly assessment + nightly report |
+| **5 — GW counterpart channel** | `feat/gw-counterparts` | LIGO/Virgo/KAGRA public alerts → skymap-filtered ZTF/Rubin counterpart search; GW standard-siren (graviton-leakage) test |
 
 ### Euclid data landscape
 
@@ -279,10 +280,22 @@ pipeline.
 
 ### Science framing (honest by design)
 
-No single dataset "detects a new dimension." The multi-probe harness constrains
-the dark-energy equation of state **(w₀, wₐ)** and the growth index **γ**;
-extra-dimensional / braneworld models earn or lose credibility by where those
-land versus GR+ΛCDM. Every conclusion traces to a computed number. See
+No single dataset "detects a new dimension." Extra-dimensional models are tested
+through three falsifiable channels, kept deliberately decoupled from the *agnostic*
+anomaly hunt (biasing discovery toward a favoured explanation manufactures
+confirmations):
+
+1. **Combined-probe parameters** — the dark-energy equation of state **(w₀, wₐ)**,
+   growth index **γ**, and **S₈**, constrained by DESI + CMB + SNe + Stage-III weak
+   lensing (Phase 3a).
+2. **Lens / growth statistics** — strong-lens abundance and profile statistics as a
+   DR1-ready ensemble instrument (Phase 3b).
+3. **GW standard sirens** — if gravitons leak into extra dimensions, GW sources look
+   dimmer than their EM counterparts (d_L^GW > d_L^EM); GW170817 pinned spacetime to
+   D ≈ 4.0 ± 0.1. Sharpening this needs exactly AGD's competency — rapid optical
+   counterpart ID after GW triggers (Phase 5).
+
+Every conclusion traces to a computed number. See
 [`SCIENCE_GOALS.md`](SCIENCE_GOALS.md) and `AGD_FORWARD_PLAN.md` §2.4.
 
 ### Longer horizon
