@@ -12,10 +12,13 @@ from src.models.alerts import (
     ZTFAlert,
 )
 from src.models.crossref import GaiaMatch, SimbadMatch
+from src.models.lenses import EuclidLensCandidate, EuclidLensCatalog
 
 __all__ = [
     "AlertBatch",
     "BronzeAlert",
+    "EuclidLensCandidate",
+    "EuclidLensCatalog",
     "FinkClassification",
     "GaiaMatch",
     "GoldAlert",

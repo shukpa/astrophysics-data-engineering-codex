@@ -30,7 +30,14 @@ from src.crossref.simbad_client import SimbadClient
 from src.exceptions import CrossReferenceError, GoldProcessingError, WriteError
 from src.models.alerts import GoldAlert, GoldBatch, SilverAlert, SilverBatch
 from src.models.crossref import GaiaMatch, SimbadMatch
-from src.utils.config import CrossmatchSettings, Settings, StorageSettings, get_settings
+from src.models.lenses import EuclidLensCandidate
+from src.utils.config import (
+    CrossmatchSettings,
+    EuclidSettings,
+    Settings,
+    StorageSettings,
+    get_settings,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -46,6 +53,11 @@ class GoldProcessor:
         simbad_client: Injected SIMBAD client (a default is built lazily).
         enable_crossmatch: When False, skip catalog queries entirely and
             emit null match columns (offline mode).
+        lens_catalog: Optional Euclid strong-lens candidates (silver layer)
+            to cross-match transient positions against. Hits within the
+            configured radius are flagged ``lens_field_transient``.
+        euclid_settings: Euclid config (lens match radius); defaults from
+            the application settings.
     """
 
     def __init__(
@@ -56,13 +68,18 @@ class GoldProcessor:
         gaia_client: GaiaClient | None = None,
         simbad_client: SimbadClient | None = None,
         enable_crossmatch: bool = True,
+        lens_catalog: list[EuclidLensCandidate] | None = None,
+        euclid_settings: EuclidSettings | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._storage = storage_settings or self._settings.storage
         self._crossmatch = crossmatch_settings or self._settings.crossmatch
+        self._euclid = euclid_settings or self._settings.euclid
         self._enable_crossmatch = enable_crossmatch
         self._gaia = gaia_client
         self._simbad = simbad_client
+        self._lens_catalog = lens_catalog or []
+        self._lens_coords = self._build_lens_coords(self._lens_catalog)
         self._log = logger.bind(component="gold_processor")
 
     @property
@@ -88,6 +105,7 @@ class GoldProcessor:
         gold_alerts: list[GoldAlert] = []
         matched_gaia = 0
         matched_simbad = 0
+        matched_lens = 0
         crossmatch_failed = 0
 
         for silver_alert in batch.alerts:
@@ -100,13 +118,11 @@ class GoldProcessor:
                 matched_simbad += 1
 
             try:
-                gold_alerts.append(
-                    self._to_gold_alert(
-                        silver_alert=silver_alert,
-                        gold_processing_id=batch_id,
-                        gaia_match=gaia_match,
-                        simbad_match=simbad_match,
-                    )
+                gold_alert = self._to_gold_alert(
+                    silver_alert=silver_alert,
+                    gold_processing_id=batch_id,
+                    gaia_match=gaia_match,
+                    simbad_match=simbad_match,
                 )
             except Exception as exc:
                 raise GoldProcessingError(
@@ -114,12 +130,23 @@ class GoldProcessor:
                     details={"object_id": silver_alert.object_id, "error": str(exc)},
                 ) from exc
 
+            if gold_alert.lens_field_transient:
+                matched_lens += 1
+                self._log.info(
+                    "lens_field_transient_flagged",
+                    object_id=gold_alert.object_id,
+                    lens_name=gold_alert.lens_name,
+                    separation_arcsec=gold_alert.lens_separation_arcsec,
+                )
+            gold_alerts.append(gold_alert)
+
         self._log.info(
             "gold_processing_completed",
             batch_id=batch_id,
             successful=len(gold_alerts),
             matched_gaia=matched_gaia,
             matched_simbad=matched_simbad,
+            matched_lens=matched_lens,
             crossmatch_failed=crossmatch_failed,
         )
 
@@ -130,6 +157,7 @@ class GoldProcessor:
             source_count=batch.count,
             matched_gaia_count=matched_gaia,
             matched_simbad_count=matched_simbad,
+            lens_matched_count=matched_lens,
             crossmatch_failed_count=crossmatch_failed,
         )
 
@@ -276,6 +304,49 @@ class GoldProcessor:
         return self._simbad
 
     # ------------------------------------------------------------------
+    # Euclid lens-field cross-match
+    # ------------------------------------------------------------------
+
+    def _build_lens_coords(self, catalog: list[EuclidLensCandidate]):
+        """Precompute a SkyCoord array for the lens catalog (once)."""
+        if not catalog:
+            return None
+        from astropy.coordinates import SkyCoord
+
+        return SkyCoord(
+            ra=[lens.ra for lens in catalog],
+            dec=[lens.dec for lens in catalog],
+            unit="deg",
+            frame="icrs",
+        )
+
+    def _lens_field_match(
+        self,
+        ra: float,
+        dec: float,
+    ) -> tuple[bool, str | None, float | None]:
+        """Match one transient position against the Euclid lens catalog.
+
+        Returns (flagged, lens_name, separation_arcsec). Flagged is True when
+        the nearest lens candidate lies within the configured radius — the
+        time-delay cosmography channel; such hits always escalate in the
+        anomaly agent regardless of ML score.
+        """
+        if self._lens_coords is None:
+            return False, None, None
+
+        from astropy.coordinates import SkyCoord
+
+        position = SkyCoord(ra=ra, dec=dec, unit="deg", frame="icrs")
+        separations = position.separation(self._lens_coords).arcsecond
+        nearest_idx = int(separations.argmin())
+        nearest_sep = float(separations[nearest_idx])
+
+        if nearest_sep <= self._euclid.lens_match_radius_arcsec:
+            return True, self._lens_catalog[nearest_idx].name, nearest_sep
+        return False, None, None
+
+    # ------------------------------------------------------------------
     # Discriminator + features
     # ------------------------------------------------------------------
 
@@ -381,6 +452,9 @@ class GoldProcessor:
     ) -> GoldAlert:
         is_likely_stellar, stellar_evidence = self._discriminate(gaia_match)
         features = self._light_curve_features(silver_alert)
+        lens_flag, lens_name, lens_separation = self._lens_field_match(
+            silver_alert.ra, silver_alert.dec
+        )
 
         return GoldAlert(
             object_id=silver_alert.object_id,
@@ -413,6 +487,9 @@ class GoldProcessor:
             simbad_separation_arcsec=simbad_match.separation_arcsec if simbad_match else None,
             is_likely_stellar=is_likely_stellar,
             stellar_evidence=stellar_evidence,
+            lens_field_transient=lens_flag,
+            lens_name=lens_name,
+            lens_separation_arcsec=lens_separation,
             source=silver_alert.source,
             source_version=silver_alert.source_version,
             bronze_processing_id=silver_alert.bronze_processing_id,

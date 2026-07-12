@@ -1,0 +1,222 @@
+[
+  {
+    "object_id": 27000000000,
+    "right_ascension": 52.83,
+    "declination": -28.17,
+    "flux_vis_psf": 0.4,
+    "flux_y_templfit": 0.3,
+    "flux_j_templfit": 0.35,
+    "flux_h_templfit": 0.32,
+    "point_like_prob": 0.0,
+    "spurious_prob": 0.0
+  },
+  {
+    "object_id": 27000000001,
+    "right_ascension": 52.841,
+    "declination": -28.163,
+    "flux_vis_psf": 1.3,
+    "flux_y_templfit": 1.1,
+    "flux_j_templfit": 1.2,
+    "flux_h_templfit": 1.02,
+    "point_like_prob": 0.1,
+    "spurious_prob": 0.05
+  },
+  {
+    "object_id": 27000000002,
+    "right_ascension": 52.852,
+    "declination": -28.156,
+    "flux_vis_psf": 2.2,
+    "flux_y_templfit": 1.9,
+    "flux_j_templfit": 2.05,
+    "flux_h_templfit": 1.72,
+    "point_like_prob": 0.2,
+    "spurious_prob": 0.1
+  },
+  {
+    "object_id": 27000000003,
+    "right_ascension": 52.863,
+    "declination": -28.149,
+    "flux_vis_psf": 3.1,
+    "flux_y_templfit": 2.7,
+    "flux_j_templfit": 2.9,
+    "flux_h_templfit": 2.42,
+    "point_like_prob": 0.3,
+    "spurious_prob": 0.15
+  },
+  {
+    "object_id": 27000000004,
+    "right_ascension": 52.874,
+    "declination": -28.142,
+    "flux_vis_psf": 4.0,
+    "flux_y_templfit": 3.5,
+    "flux_j_templfit": 3.75,
+    "flux_h_templfit": 3.12,
+    "point_like_prob": 0.4,
+    "spurious_prob": 0.0
+  },
+  {
+    "object_id": 27000000005,
+    "right_ascension": 52.885,
+    "declination": -28.135,
+    "flux_vis_psf": 4.9,
+    "flux_y_templfit": 4.3,
+    "flux_j_templfit": 4.6,
+    "flux_h_templfit": 3.82,
+    "point_like_prob": 0.5,
+    "spurious_prob": 0.05
+  },
+  {
+    "object_id": 27000000006,
+    "right_ascension": 52.896,
+    "declination": -28.128,
+    "flux_vis_psf": 5.8,
+    "flux_y_templfit": 5.1,
+    "flux_j_templfit": 5.45,
+    "flux_h_templfit": 4.52,
+    "point_like_prob": 0.6,
+    "spurious_prob": 0.1
+  },
+  {
+    "object_id": 27000000007,
+    "right_ascension": 52.907,
+    "declination": -28.121,
+    "flux_vis_psf": 6.7,
+    "flux_y_templfit": 5.9,
+    "flux_j_templfit": 6.3,
+    "flux_h_templfit": 5.22,
+    "point_like_prob": 0.7,
+    "spurious_prob": 0.15
+  },
+  {
+    "object_id": 27000000008,
+    "right_ascension": 52.918,
+    "declination": -28.114,
+    "flux_vis_psf": 7.6,
+    "flux_y_templfit": 6.7,
+    "flux_j_templfit": 7.15,
+    "flux_h_templfit": 5.92,
+    "point_like_prob": 0.8,
+    "spurious_prob": 0.0
+  },
+  {
+    "object_id": 27000000009,
+    "right_ascension": 52.929,
+    "declination": -28.107,
+    "flux_vis_psf": 8.5,
+    "flux_y_templfit": 7.5,
+    "flux_j_templfit": 8.0,
+    "flux_h_templfit": 6.62,
+    "point_like_prob": 0.9,
+    "spurious_prob": 0.05
+  },
+  {
+    "object_id": 27000000010,
+    "right_ascension": 52.94,
+    "declination": -28.1,
+    "flux_vis_psf": 9.4,
+    "flux_y_templfit": 8.3,
+    "flux_j_templfit": 8.85,
+    "flux_h_templfit": 7.32,
+    "point_like_prob": 0.0,
+    "spurious_prob": 0.1
+  },
+  {
+    "object_id": 27000000011,
+    "right_ascension": 52.951,
+    "declination": -28.093,
+    "flux_vis_psf": 10.3,
+    "flux_y_templfit": 9.1,
+    "flux_j_templfit": 9.7,
+    "flux_h_templfit": 8.02,
+    "point_like_prob": 0.1,
+    "spurious_prob": 0.15
+  },
+  {
+    "object_id": 27000000012,
+    "right_ascension": 52.962,
+    "declination": -28.086,
+    "flux_vis_psf": 11.2,
+    "flux_y_templfit": 9.9,
+    "flux_j_templfit": 10.55,
+    "flux_h_templfit": 8.72,
+    "point_like_prob": 0.2,
+    "spurious_prob": 0.0
+  },
+  {
+    "object_id": 27000000013,
+    "right_ascension": 52.973,
+    "declination": -28.079,
+    "flux_vis_psf": 12.1,
+    "flux_y_templfit": 10.7,
+    "flux_j_templfit": 11.4,
+    "flux_h_templfit": 9.42,
+    "point_like_prob": 0.3,
+    "spurious_prob": 0.05
+  },
+  {
+    "object_id": 27000000014,
+    "right_ascension": 52.984,
+    "declination": -28.072,
+    "flux_vis_psf": 13.0,
+    "flux_y_templfit": 11.5,
+    "flux_j_templfit": 12.25,
+    "flux_h_templfit": 10.12,
+    "point_like_prob": 0.4,
+    "spurious_prob": 0.1
+  },
+  {
+    "object_id": 27000000015,
+    "right_ascension": 52.995,
+    "declination": -28.065,
+    "flux_vis_psf": 13.9,
+    "flux_y_templfit": 12.3,
+    "flux_j_templfit": 13.1,
+    "flux_h_templfit": 10.82,
+    "point_like_prob": 0.5,
+    "spurious_prob": 0.15
+  },
+  {
+    "object_id": 27000000016,
+    "right_ascension": 53.006,
+    "declination": -28.058,
+    "flux_vis_psf": 14.8,
+    "flux_y_templfit": 13.1,
+    "flux_j_templfit": 13.95,
+    "flux_h_templfit": 11.52,
+    "point_like_prob": 0.6,
+    "spurious_prob": 0.0
+  },
+  {
+    "object_id": 27000000017,
+    "right_ascension": 53.017,
+    "declination": -28.051,
+    "flux_vis_psf": 15.7,
+    "flux_y_templfit": 13.9,
+    "flux_j_templfit": 14.8,
+    "flux_h_templfit": 12.22,
+    "point_like_prob": 0.7,
+    "spurious_prob": 0.05
+  },
+  {
+    "object_id": 27000000018,
+    "right_ascension": 53.028,
+    "declination": -28.044,
+    "flux_vis_psf": 16.6,
+    "flux_y_templfit": 14.7,
+    "flux_j_templfit": 15.65,
+    "flux_h_templfit": 12.92,
+    "point_like_prob": 0.8,
+    "spurious_prob": 0.1
+  },
+  {
+    "object_id": 27000000019,
+    "right_ascension": 52.839,
+    "declination": -28.037,
+    "flux_vis_psf": 17.5,
+    "flux_y_templfit": 15.5,
+    "flux_j_templfit": 16.5,
+    "flux_h_templfit": 13.62,
+    "point_like_prob": 0.9,
+    "spurious_prob": 0.15
+  }
+]
