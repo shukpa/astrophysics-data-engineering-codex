@@ -48,9 +48,9 @@ black src/ tests/
 ## Current Technical Direction
 
 - Fink REST API is the Phase 1 ingestion source.
-- Bronze processing is implemented; silver, gold, and agent orchestration are still evolving.
-- The repo is now Codex-first for development workflow.
-- The planned agent runtime provider is OpenAI-based, but no production agent runtime has been implemented yet.
+- Bronze and silver processing are implemented; gold and agent orchestration are still evolving.
+- The repository supports agent-assisted development through the instructions in this file.
+- No production agent runtime or provider has been selected yet.
 
 ## Key Files
 

@@ -10,9 +10,7 @@ The bronze layer is the first stage in the medallion architecture:
 This processor is designed for the "hot path" and does not use LLM calls.
 """
 
-import json
 import uuid
-from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -127,12 +125,15 @@ class BronzeProcessor:
             failed=len(validation_errors),
         )
 
-        if validation_errors and self._processing.schema_validation_mode == "strict":
-            if len(bronze_alerts) == 0:
-                raise BronzeProcessingError(
-                    "All alerts failed validation",
-                    details={"errors": validation_errors[:10]},  # Limit error details
-                )
+        if (
+            validation_errors
+            and self._processing.schema_validation_mode == "strict"
+            and len(bronze_alerts) == 0
+        ):
+            raise BronzeProcessingError(
+                "All alerts failed validation",
+                details={"errors": validation_errors[:10]},
+            )
 
         return AlertBatch(
             alerts=bronze_alerts,
@@ -400,9 +401,10 @@ class BronzeProcessor:
         }
 
         if "observation_date" in df.columns:
+            observation_dates = df["observation_date"].astype(str)
             stats["date_range"] = {
-                "min": df["observation_date"].min(),
-                "max": df["observation_date"].max(),
+                "min": observation_dates.min(),
+                "max": observation_dates.max(),
             }
 
         if "fink_class" in df.columns:

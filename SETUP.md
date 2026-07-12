@@ -26,17 +26,14 @@ pip install -e ".[dev]"
 
 ### 2. Configuration
 
-Create a `.env` file in the repo root and fill in your API keys:
+Create a `.env` file in the repo root for optional runtime configuration:
 
 ```bash
 touch .env
 ```
 
-Required environment variables:
+Optional environment variables:
 ```bash
-# OpenAI API key (for future agent layer)
-OPENAI_API_KEY=sk-...
-
 # Optional: Fink livestream credentials (Phase 2)
 FINK_USERNAME=
 FINK_GROUP_ID=
@@ -108,8 +105,8 @@ databricks clusters create --json-file config/databricks_cluster.json
 - `pyyaml` — Configuration file parsing
 
 ### Agents (Phase 3)
-- `openai` — OpenAI API client
-- (Future: evaluate LangChain vs custom orchestration)
+- No provider-specific agent runtime is installed yet
+- Future orchestration must remain outside the real-time hot path
 
 ### Streaming (Phase 2)
 - `fink-client` — Fink Kafka consumer

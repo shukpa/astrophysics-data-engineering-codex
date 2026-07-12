@@ -11,7 +11,7 @@ Example usage:
     print(settings.storage.bronze_path)
 """
 
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -20,7 +20,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     """Deployment environment."""
 
     DEVELOPMENT = "development"
@@ -28,7 +28,7 @@ class Environment(str, Enum):
     PRODUCTION = "production"
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     """Logging level."""
 
     DEBUG = "DEBUG"
@@ -154,24 +154,6 @@ class LoggingSettings(BaseSettings):
     log_file: Path | None = None
 
 
-class OpenAISettings(BaseSettings):
-    """Configuration for the OpenAI API.
-
-    Attributes:
-        api_key: OpenAI API key (loaded from environment).
-        model: Model to use for agent operations.
-        max_tokens: Maximum tokens for model responses.
-        temperature: Sampling temperature for model responses.
-    """
-
-    model_config = SettingsConfigDict(env_prefix="OPENAI_")
-
-    api_key: str | None = None
-    model: str = "gpt-5"
-    max_tokens: int = Field(default=4096, ge=1, le=100000)
-    temperature: float = Field(default=0.0, ge=0.0, le=1.0)
-
-
 class Settings(BaseSettings):
     """Main application settings combining all configuration sections.
 
@@ -186,7 +168,6 @@ class Settings(BaseSettings):
         storage: Data storage configuration.
         processing: Processing pipeline configuration.
         logging: Logging configuration.
-        openai: OpenAI API configuration.
     """
 
     model_config = SettingsConfigDict(
@@ -205,7 +186,6 @@ class Settings(BaseSettings):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     processing: ProcessingSettings = Field(default_factory=ProcessingSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
-    openai: OpenAISettings = Field(default_factory=OpenAISettings)
 
     @model_validator(mode="after")
     def adjust_settings_for_environment(self) -> "Settings":

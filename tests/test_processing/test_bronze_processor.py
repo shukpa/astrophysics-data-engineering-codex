@@ -1,13 +1,12 @@
 """Tests for the bronze processor module."""
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
 
-from src.exceptions import BronzeProcessingError, SchemaValidationError
+from src.exceptions import BronzeProcessingError
 from src.models.alerts import AlertBatch, BronzeAlert, ZTFAlert
 from src.processing.bronze_processor import BronzeProcessor, create_bronze_processor
 from src.utils.config import ProcessingSettings, Settings, StorageSettings
@@ -216,22 +215,17 @@ class TestBronzeProcessor:
         batch = processor.process_alerts(sample_alerts, batch_id="custom_123")
         assert batch.batch_id == "custom_123"
 
-    def test_process_alerts_validation_failure_strict(
-        self, processor: BronzeProcessor
-    ) -> None:
-        """Test that invalid alerts cause failure in strict mode."""
+    def test_process_alerts_validation_failure_strict(self, processor: BronzeProcessor) -> None:
+        """Test that strict mode skips invalid alerts when some alerts succeed."""
         invalid_alerts = [
+            create_sample_alert(object_id="ZTF21valid"),
             {"objectId": "ZTF21xxx"},  # Missing required fields
         ]
 
         batch = processor.process_alerts(invalid_alerts)
-        # In strict mode, batch should be empty but not raise
-        # (only raises if ALL alerts fail and batch is empty)
-        assert batch.count == 0
+        assert batch.count == 1
 
-    def test_process_alerts_validation_failure_all_invalid_raises(
-        self, tmp_path: Path
-    ) -> None:
+    def test_process_alerts_validation_failure_all_invalid_raises(self, tmp_path: Path) -> None:
         """Test that all-invalid batch raises error in strict mode."""
         storage = StorageSettings(base_path=tmp_path)
         processing = ProcessingSettings(schema_validation_mode="strict")
@@ -283,9 +277,7 @@ class TestBronzeProcessor:
         output_path = processor.write_batch(batch)
         assert output_path == processor.output_path
 
-    def test_write_batch_json(
-        self, tmp_path: Path, sample_alerts: list[dict[str, Any]]
-    ) -> None:
+    def test_write_batch_json(self, tmp_path: Path, sample_alerts: list[dict[str, Any]]) -> None:
         """Test writing batch to JSON format."""
         storage = StorageSettings(base_path=tmp_path, file_format="json")
         processor = BronzeProcessor(storage_settings=storage)
