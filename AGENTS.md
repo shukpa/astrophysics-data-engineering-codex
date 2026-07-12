@@ -83,12 +83,13 @@ black src/ scripts/ tests/
 - **`src/utils/config.py` is the only runtime configuration.** Pydantic settings
   with environment-variable / `.env` overrides. All runtime values live here.
 - **`config/default.yaml` is a non-loaded planning artifact.** Nothing reads it.
-  It holds only forward-looking config for phases not yet implemented (catalog
-  cross-match radii, anomaly-agent thresholds, classification taxonomy, nightly
-  digest). It must **not** duplicate any value already defined in Pydantic or in
-  processor code (e.g. the silver rejection thresholds live in
+  It holds only forward-looking config for phases not yet implemented
+  (anomaly-agent thresholds, classification taxonomy, nightly digest). It must
+  **not** duplicate any value already defined in Pydantic or in processor code
+  (e.g. the silver rejection thresholds live in
   `src/processing/silver_processor.py`). When a phase implements one of these
-  sections, move it into Pydantic and delete it from the YAML.
+  sections, move it into Pydantic and delete it from the YAML — Phase 1 did
+  exactly this for the catalog cross-match section (now `CrossmatchSettings`).
 
 ## Architecture Rules
 
@@ -106,12 +107,21 @@ black src/ scripts/ tests/
 
 ## Current Technical Direction
 
-- Fink REST API is the Phase 1 ingestion source; bronze and silver processing are
-  implemented (streaming ZTF alerts through the medallion).
+- Fink REST API is the ingestion source; bronze, silver, and gold processing are
+  implemented (streaming ZTF alerts through the full medallion).
 - **Phase 0 (repo convergence) landed:** CI, single config source of truth,
   timezone-aware datetimes, and this hardened contract.
-- Gold layer, Gaia/SIMBAD cross-match, Euclid open-data ingestion, the multi-probe
-  constraint harness, and the anomaly agent are the next phases — see
+- **Phase 1 (gold + cross-match) landed:** Gaia DR3 / SIMBAD cone-search clients
+  (retry + Parquet cache), gold processor with nearest-neighbour enrichment,
+  star/extragalactic discriminator, light-curve features, and provenance
+  pointers (no raw payload JSON in gold). Catalog outages degrade gracefully to
+  null match columns. Note: astroquery's Gaia TAP layer ignores `HTTPS_PROXY`;
+  in a CONNECT-proxy environment set `CROSSMATCH_TAP_PROXY_URL` (and
+  `CROSSMATCH_TAP_CA_BUNDLE` if the proxy re-terminates TLS) so the Gaia client
+  tunnels through it. Unset by default = direct network. SIMBAD needs nothing
+  (it uses `requests`, which honours `HTTPS_PROXY`).
+- Euclid open-data ingestion, the multi-probe constraint harness, the anomaly
+  agent, and the GW counterpart channel are the next phases — see
   `AGD_FORWARD_PLAN.md`.
 - No production agent runtime or provider has been selected; the platform stays
   provider-neutral by design.
@@ -124,6 +134,12 @@ black src/ scripts/ tests/
 - `src/processing/bronze_processor.py`: bronze layer processing
 - `src/processing/silver_processor.py`: silver layer processing (quality gates,
   dedup, rejection thresholds)
+- `src/processing/gold_processor.py`: gold layer processing (cross-match
+  enrichment, discriminator, light-curve features)
+- `src/crossref/gaia_client.py` / `src/crossref/simbad_client.py`: catalog
+  cone-search clients (retry, timeout, Parquet cache)
+- `scripts/run_fink_gold_smoke.py`: bronze→silver→gold smoke run
+  (`--source synthetic --no-crossmatch` for offline environments)
 - `src/utils/config.py`: runtime settings and environment-variable contract
 - `config/default.yaml`: non-loaded planning config for future phases
 - `tests/conftest.py`: shared test fixtures

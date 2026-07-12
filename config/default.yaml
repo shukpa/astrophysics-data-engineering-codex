@@ -18,20 +18,9 @@
 # │ delete it here so there is never a second source of truth.                │
 # └───────────────────────────────────────────────────────────────────────────┘
 
-# =============================================================================
-# Catalog cross-match (Phase 1 — feat/gold-crossref; not yet implemented)
-# Gaia DR3 / SIMBAD cone-search defaults for the gold cross-reference layer.
-# =============================================================================
-crossmatch:
-  simbad:
-    timeout_seconds: 30
-    default_radius_arcsec: 5.0
-  gaia:
-    catalog: "gaiadr3.gaia_source"
-    timeout_seconds: 60
-    default_radius_arcsec: 5.0
-  # Radius used when associating silver transients with catalog / lens fields.
-  cross_reference_radius_arcsec: 5.0
+# NOTE: the former `crossmatch:` section was implemented in Phase 1
+# (feat/gold-crossref) as CrossmatchSettings in src/utils/config.py and
+# deleted here per the single-source rule above.
 
 # =============================================================================
 # Agent configuration (Phase 4 — feat/anomaly-agent; not yet implemented)

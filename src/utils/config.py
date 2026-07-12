@@ -136,6 +136,47 @@ class ProcessingSettings(BaseSettings):
     min_detection_significance: float = Field(default=5.0, ge=0.0)
 
 
+class CrossmatchSettings(BaseSettings):
+    """Configuration for catalog cross-matching (gold layer).
+
+    Attributes:
+        radius_arcsec: Cone-search radius for catalog cross-matches (arcsec).
+        gaia_catalog: Fully qualified Gaia TAP table to query.
+        gaia_timeout_seconds: Timeout for Gaia TAP queries.
+        gaia_max_rows: Maximum rows to request per Gaia cone search.
+        simbad_timeout_seconds: Timeout for SIMBAD queries.
+        max_retries: Maximum retry attempts for catalog queries.
+        cache_enabled: Whether to cache catalog query results locally.
+        cache_path: Directory for the local Parquet query cache
+            (relative to StorageSettings.base_path).
+        parallax_snr_threshold: Minimum parallax/parallax_error for a
+            significant (stellar) parallax detection.
+        pm_snr_threshold: Minimum total-proper-motion SNR for a significant
+            (stellar) proper-motion detection.
+        tap_proxy_url: Optional CONNECT-proxy URL for Gaia TAP queries. When
+            set, the Gaia client tunnels astroquery's TAP connections through
+            it (astroquery ignores HTTPS_PROXY). Leave unset for direct
+            network access. SIMBAD does not need this (it uses requests).
+        tap_ca_bundle: Optional CA bundle to trust when tap_proxy_url is set
+            and the proxy re-terminates TLS with its own certificate.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="CROSSMATCH_")
+
+    radius_arcsec: float = Field(default=5.0, gt=0, le=3600)
+    gaia_catalog: str = "gaiadr3.gaia_source"
+    gaia_timeout_seconds: int = Field(default=60, ge=1, le=600)
+    gaia_max_rows: int = Field(default=50, ge=1, le=10000)
+    simbad_timeout_seconds: int = Field(default=30, ge=1, le=600)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    cache_enabled: bool = True
+    cache_path: str = "cache/crossref"
+    parallax_snr_threshold: float = Field(default=5.0, ge=0.0)
+    pm_snr_threshold: float = Field(default=5.0, ge=0.0)
+    tap_proxy_url: str | None = None
+    tap_ca_bundle: str | None = None
+
+
 class LoggingSettings(BaseSettings):
     """Configuration for structured logging.
 
@@ -167,6 +208,7 @@ class Settings(BaseSettings):
         fink: Fink API configuration.
         storage: Data storage configuration.
         processing: Processing pipeline configuration.
+        crossmatch: Catalog cross-match configuration (gold layer).
         logging: Logging configuration.
     """
 
@@ -185,6 +227,7 @@ class Settings(BaseSettings):
     fink: FinkSettings = Field(default_factory=FinkSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     processing: ProcessingSettings = Field(default_factory=ProcessingSettings)
+    crossmatch: CrossmatchSettings = Field(default_factory=CrossmatchSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     @model_validator(mode="after")

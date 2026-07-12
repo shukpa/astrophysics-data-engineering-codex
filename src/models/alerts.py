@@ -391,3 +391,108 @@ class SilverBatch(BaseModel):
     def object_ids(self) -> list[str]:
         """List of unique object IDs in the batch."""
         return list({alert.object_id for alert in self.alerts})
+
+
+class GoldAlert(BaseModel):
+    """Enriched, analysis-ready alert record for the gold layer.
+
+    Gold records carry the science columns from silver plus catalog
+    cross-match results (Gaia DR3, SIMBAD), light-curve features derived
+    from the alert history, and the star/extragalactic discriminator.
+
+    Provenance is preserved as *pointers* (processing IDs and the raw
+    payload hash) — the raw payload JSON itself is intentionally NOT
+    copied into gold (it will not survive Rubin-scale volumes).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Core science columns (from silver)
+    object_id: str = Field(..., min_length=3)
+    candidate_id: int | None = None
+    ra: float = Field(..., ge=0, lt=360)
+    dec: float = Field(..., ge=-90, le=90)
+    magpsf: float
+    sigmapsf: float = Field(..., ge=0)
+    filter_id: int = Field(..., ge=1, le=3)
+    filter_name: str
+    jd: float = Field(..., gt=2400000)
+    mjd: float
+    observation_date: str
+    fink_class: str | None = None
+    cds_xmatch: str | None = None
+    rb_score: float | None = Field(None, ge=0, le=1)
+    drb_score: float | None = Field(None, ge=0, le=1)
+
+    # Gaia DR3 cross-match (nearest neighbour)
+    gaia_source_id: int | None = None
+    gaia_separation_arcsec: float | None = Field(None, ge=0)
+    gaia_g_mag: float | None = None
+    gaia_parallax: float | None = None
+    gaia_parallax_error: float | None = None
+    gaia_parallax_snr: float | None = None
+    gaia_pmra: float | None = None
+    gaia_pmdec: float | None = None
+    gaia_pm_total: float | None = None
+    gaia_pm_snr: float | None = None
+
+    # SIMBAD cross-match (nearest neighbour)
+    simbad_main_id: str | None = None
+    simbad_otype: str | None = None
+    simbad_separation_arcsec: float | None = Field(None, ge=0)
+
+    # Star/extragalactic discriminator (None when no Gaia match)
+    is_likely_stellar: bool | None = None
+    stellar_evidence: str | None = None
+
+    # Light-curve features (from prv_candidates + current epoch)
+    lc_n_detections: int = Field(default=1, ge=1)
+    lc_time_span_days: float | None = Field(None, ge=0)
+    lc_mag_brightest: float | None = None
+    lc_mag_faintest: float | None = None
+    lc_mag_mean: float | None = None
+    lc_mag_std: float | None = Field(None, ge=0)
+    lc_amplitude: float | None = Field(None, ge=0)
+    lc_mag_rate_per_day: float | None = None
+
+    # Provenance pointers (no raw payload JSON in gold)
+    source: str
+    source_version: str | None = None
+    bronze_processing_id: str | None = None
+    silver_processing_id: str | None = None
+    gold_processing_id: str | None = None
+    source_object_id: str
+    source_candidate_id: int | None = None
+    ingestion_timestamp: datetime
+    silver_timestamp: datetime
+    gold_timestamp: datetime = Field(default_factory=_utcnow)
+    raw_payload_hash: str | None = None
+
+    def to_flat_dict(self) -> dict[str, Any]:
+        """Convert to a flat dictionary for Parquet/Delta-compatible storage."""
+        return self.model_dump(mode="json")
+
+
+class GoldBatch(BaseModel):
+    """A batch of gold alerts plus enrichment counters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    alerts: list[GoldAlert]
+    batch_id: str
+    created_at: datetime = Field(default_factory=_utcnow)
+    source_batch_id: str | None = None
+    source_count: int = 0
+    matched_gaia_count: int = 0
+    matched_simbad_count: int = 0
+    crossmatch_failed_count: int = 0
+
+    @property
+    def count(self) -> int:
+        """Number of gold alerts in the batch."""
+        return len(self.alerts)
+
+    @property
+    def object_ids(self) -> list[str]:
+        """List of unique object IDs in the batch."""
+        return list({alert.object_id for alert in self.alerts})
