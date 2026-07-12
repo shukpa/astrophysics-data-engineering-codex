@@ -63,18 +63,25 @@ astrophysics-data-engineering-codex/
 │   │   └── alerts.py               # Pydantic models for ZTF/Fink alerts
 │   ├── ingestion/
 │   │   └── fink_api_client.py      # Fink REST API client (retry/backoff)
+│   ├── crossref/
+│   │   ├── gaia_client.py          # Gaia DR3 cone search (retry, Parquet cache)
+│   │   ├── simbad_client.py        # SIMBAD cone search (retry, Parquet cache)
+│   │   └── utils.py                # Separation, NaN handling, cache keys
 │   ├── processing/
 │   │   ├── bronze_processor.py     # Bronze layer processing
-│   │   └── silver_processor.py     # Validation, quality filtering, deduplication
+│   │   ├── silver_processor.py     # Validation, quality filtering, deduplication
+│   │   └── gold_processor.py       # Cross-match enrichment, discriminator, LC features
 │   ├── utils/
 │   │   └── config.py               # Pydantic-based runtime configuration
 │   └── agents/                     # (Future: AI agent implementations)
 ├── scripts/
-│   └── run_fink_silver_smoke.py    # Live bronze→silver smoke run
+│   ├── run_fink_silver_smoke.py    # Live bronze→silver smoke run
+│   └── run_fink_gold_smoke.py      # Bronze→silver→gold smoke (live or synthetic)
 ├── tests/
 │   ├── conftest.py                 # Shared pytest fixtures
 │   ├── test_ingestion/             # Fink API client tests
-│   ├── test_processing/            # Bronze & silver processor tests
+│   ├── test_crossref/              # Gaia/SIMBAD client tests (mocked + live-gated)
+│   ├── test_processing/            # Bronze, silver & gold processor tests
 │   ├── test_scripts/               # Smoke-script tests
 │   └── test_utils/                 # Config tests
 ├── config/
@@ -89,7 +96,7 @@ astrophysics-data-engineering-codex/
 
 ## Current Status
 
-**Implemented — ZTF/Fink transient pipeline (bronze → silver):**
+**Implemented — ZTF/Fink transient pipeline (bronze → silver → gold):**
 
 - [x] Project structure and Pydantic runtime configuration
 - [x] Custom exception hierarchy
@@ -97,15 +104,18 @@ astrophysics-data-engineering-codex/
 - [x] Bronze layer processor
 - [x] Fink API client with retry logic
 - [x] Silver layer processor (quality gates, dedup, provenance)
-- [x] Test framework + live bronze→silver smoke script
 - [x] Repo convergence (Phase 0): CI, single config source of truth, timezone-aware datetimes
+- [x] Gold layer + Gaia DR3 / SIMBAD cross-match (Phase 1): cone-search clients with
+      retry + Parquet cache, star/extragalactic discriminator, light-curve features,
+      provenance pointers (no raw payload JSON in gold)
+- [x] Test framework + bronze→silver→gold smoke script (live or offline synthetic)
 
 **Next — see [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md) for the full plan:**
 
-- [ ] Gold layer + Gaia/SIMBAD cross-match (`feat/gold-crossref`)
 - [ ] Euclid Q1 open-data ingestion + strong-lens catalogue (`feat/euclid-q1`)
 - [ ] Multi-probe constraint & lensing science harness (`feat/constraint-harness`)
 - [ ] Lens-aware anomaly agent (`feat/anomaly-agent`)
+- [ ] Multi-messenger GW counterpart channel (`feat/gw-counterparts`)
 
 ## Getting Started
 
@@ -263,7 +273,7 @@ detail) is [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md). Summary:
 | Phase | Branch | Focus |
 |-------|--------|-------|
 | **0 — Repo convergence** ✅ | `chore/repo-convergence` | CI, single config source of truth, timezone-aware datetimes, hardened agent contract |
-| **1 — Gold + cross-match** | `feat/gold-crossref` | Silver→gold; Gaia DR3 / SIMBAD cone-search cross-match; star/extragalactic discrimination |
+| **1 — Gold + cross-match** ✅ | `feat/gold-crossref` | Silver→gold; Gaia DR3 / SIMBAD cone-search cross-match; star/extragalactic discrimination |
 | **2 — Euclid Q1 ingestion** | `feat/euclid-q1` | Batch TAP/ADQL ingestion of Euclid open data (MER catalogue + Q1 strong-lens sample) through the medallion; transient↔lens-field cross-match |
 | **3 — Constraint & lensing harness** | `feat/constraint-harness` | Falsifiable multi-probe cosmology fit (DESI + CMB + SNe + weak lensing → w₀, wₐ, γ vs GR+ΛCDM) and strong-lens statistics |
 | **4 — Anomaly agent** | `feat/anomaly-agent` | Lens-aware, provider-neutral warm-path anomaly assessment + nightly report |
