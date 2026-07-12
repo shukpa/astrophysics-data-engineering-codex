@@ -11,7 +11,6 @@ from src.utils.config import (
     FinkSettings,
     LoggingSettings,
     LogLevel,
-    OpenAISettings,
     ProcessingSettings,
     Settings,
     StorageSettings,
@@ -129,7 +128,8 @@ class TestLoggingSettings:
 
     def test_default_values(self) -> None:
         """Test that LoggingSettings has correct defaults."""
-        settings = LoggingSettings()
+        with patch.dict(os.environ, {}, clear=True):
+            settings = LoggingSettings()
 
         assert settings.level == LogLevel.INFO
         assert settings.format == "console"
@@ -141,30 +141,6 @@ class TestLoggingSettings:
         for level in LogLevel:
             settings = LoggingSettings(level=level)
             assert settings.level == level
-
-
-class TestOpenAISettings:
-    """Tests for OpenAISettings configuration."""
-
-    def test_default_values(self) -> None:
-        """Test that OpenAISettings has correct defaults."""
-        settings = OpenAISettings()
-
-        assert settings.api_key is None
-        assert settings.model == "gpt-5"
-        assert settings.max_tokens == 4096
-        assert settings.temperature == 0.0
-
-    def test_temperature_validation(self) -> None:
-        """Test temperature validation bounds."""
-        settings = OpenAISettings(temperature=0.5)
-        assert settings.temperature == 0.5
-
-        with pytest.raises(ValueError):
-            OpenAISettings(temperature=-0.1)
-
-        with pytest.raises(ValueError):
-            OpenAISettings(temperature=1.5)
 
 
 class TestSettings:

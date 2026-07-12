@@ -8,13 +8,19 @@ network access.
 from __future__ import annotations
 
 import json
+import os
 
 import pandas as pd
 import pytest
+import requests
 import responses
 
-from src.ingestion.fink_api_client import FinkAPIClient, FinkAPIConfig, FinkClass
-
+from src.ingestion.fink_api_client import (
+    FinkAPIClient,
+    FinkAPIConfig,
+    FinkClass,
+    canonicalize_fink_alert_record,
+)
 
 # =============================================================================
 # Fixtures
@@ -63,6 +69,58 @@ def sample_alert_json() -> list[dict]:
 
 class TestFinkAPIClientUnit:
     """Unit tests with mocked HTTP responses."""
+
+    def test_canonicalize_prefixed_fink_record(self) -> None:
+        """Live Fink prefixed fields should map to canonical Bronze fields."""
+        raw = {
+            "i:objectId": "ZTF26abc",
+            "i:candid": 3396516274715015009,
+            "i:ra": 264.86,
+            "i:dec": 5.01,
+            "i:magpsf": 18.2,
+            "i:sigmapsf": 0.08,
+            "i:fid": 2,
+            "i:jd": 2461151.01,
+            "i:rb": 0.92,
+            "i:drb": 0.99,
+            "v:classification": "SN candidate",
+            "d:cdsxmatch": "Unknown",
+        }
+
+        canonical = canonicalize_fink_alert_record(raw)
+
+        assert canonical["objectId"] == "ZTF26abc"
+        assert canonical["candid"] == 3396516274715015009
+        assert canonical["ra"] == 264.86
+        assert canonical["dec"] == 5.01
+        assert canonical["magpsf"] == 18.2
+        assert canonical["sigmapsf"] == 0.08
+        assert canonical["fid"] == 2
+        assert canonical["jd"] == 2461151.01
+        assert canonical["rb"] == 0.92
+        assert canonical["drb"] == 0.99
+        assert canonical["v:fink_class"] == "SN candidate"
+        assert canonical["_fink_raw_payload"] == raw
+
+    def test_canonicalize_preserves_unprefixed_record(self) -> None:
+        """Existing unprefixed test records should still pass through."""
+        raw = {
+            "objectId": "ZTF21aaxtctv",
+            "candid": 123,
+            "ra": 193.822,
+            "dec": 2.896,
+            "magpsf": 18.5,
+            "sigmapsf": 0.05,
+            "fid": 1,
+            "jd": 2459500.5,
+            "v:fink_class": "SN candidate",
+        }
+
+        canonical = canonicalize_fink_alert_record(raw)
+
+        assert canonical["objectId"] == raw["objectId"]
+        assert canonical["v:fink_class"] == "SN candidate"
+        assert canonical["_fink_raw_payload"] == raw
 
     def test_config_defaults(self) -> None:
         """Default configuration should use Fink's public API."""
@@ -138,6 +196,35 @@ class TestFinkAPIClientUnit:
         assert len(df) == 2
 
     @responses.activate
+    def test_get_latest_alert_records(self, client: FinkAPIClient) -> None:
+        """Latest alert records should be canonicalized for Bronze."""
+        responses.add(
+            responses.POST,
+            "https://api.fink-portal.org/api/v1/latests",
+            json=[
+                {
+                    "i:objectId": "ZTF26abc",
+                    "i:candid": 1,
+                    "i:ra": 10.0,
+                    "i:dec": 20.0,
+                    "i:magpsf": 18.0,
+                    "i:sigmapsf": 0.1,
+                    "i:fid": 1,
+                    "i:jd": 2461151.0,
+                    "v:classification": "SN candidate",
+                }
+            ],
+            status=200,
+        )
+
+        records = client.get_latest_alert_records(FinkClass.SN_CANDIDATE, n=1)
+
+        assert records[0]["objectId"] == "ZTF26abc"
+        assert records[0]["v:fink_class"] == "SN candidate"
+        request_body = json.loads(responses.calls[0].request.body)
+        assert "columns" not in request_body
+
+    @responses.activate
     def test_cone_search(
         self,
         client: FinkAPIClient,
@@ -164,7 +251,7 @@ class TestFinkAPIClientUnit:
             status=500,
         )
 
-        with pytest.raises(Exception):
+        with pytest.raises(requests.HTTPError):
             client.get_object("ZTF21aaxtctv")
 
     @responses.activate
@@ -202,6 +289,10 @@ class TestFinkAPIClientUnit:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    os.getenv("AGD_RUN_INTEGRATION_TESTS") != "1",
+    reason="Set AGD_RUN_INTEGRATION_TESTS=1 to run live Fink API tests.",
+)
 class TestFinkAPIClientIntegration:
     """Integration tests against the live Fink API.
 

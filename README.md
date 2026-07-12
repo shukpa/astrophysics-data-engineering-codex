@@ -4,7 +4,7 @@
 
 An open-source platform for detecting and classifying astronomical transients from telescope survey data. We ingest streaming alerts from ZTF (and soon Rubin/LSST), process them through a Databricks lakehouse architecture, and use AI agents to identify genuinely anomalous events that might represent new physics.
 
-Development workflow in this repo is Codex-first. See `AGENTS.md` for the active agent instructions and operating conventions.
+See `AGENTS.md` for the repository's development instructions and operating conventions.
 
 ## Vision
 
@@ -64,7 +64,8 @@ astrophysics-data-engineering/
 │   │   └── __init__.py         # (Future: Fink API client)
 │   ├── processing/
 │   │   ├── __init__.py
-│   │   └── bronze_processor.py # Bronze layer processing
+│   │   ├── bronze_processor.py # Bronze layer processing
+│   │   └── silver_processor.py # Validation, quality filtering, deduplication
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   └── config.py           # Pydantic-based configuration
@@ -90,7 +91,7 @@ astrophysics-data-engineering/
 - [x] Bronze layer processor
 - [x] Test framework
 - [x] Fink API client with retry logic
-- [ ] Silver layer processor
+- [x] Silver layer processor
 - [ ] Gold layer with cross-matching
 - [ ] Basic triage agent
 
@@ -125,7 +126,6 @@ Configuration is managed via environment variables or a manually created `.env` 
 AGD_ENVIRONMENT=development
 STORAGE_BASE_PATH=./data
 FINK_TIMEOUT_SECONDS=30
-OPENAI_API_KEY=your-api-key  # For future agent features
 ```
 
 The runtime source of truth is `src/utils/config.py`. `config/default.yaml` is currently a planning/defaults artifact and is not loaded by the application runtime.
@@ -135,6 +135,7 @@ The runtime source of truth is `src/utils/config.py`. `config/default.yaml` is c
 ```bash
 pytest                          # Run all tests
 pytest -m "not integration"     # Skip integration tests
+AGD_RUN_INTEGRATION_TESTS=1 pytest -m integration  # Run live Fink API tests
 pytest --cov=src                # With coverage report
 ```
 
@@ -215,7 +216,7 @@ The Fink broker assigns ML classifications:
 | Configuration | pydantic-settings | Environment-based config management |
 | Logging | structlog | Structured logging for observability |
 | Astronomy | astropy, astroquery | Coordinate transforms, catalog queries |
-| AI Agents | OpenAI API | Scientific reasoning and anomaly assessment |
+| AI Agents | Provider-neutral (future) | Scientific reasoning and anomaly assessment |
 | Testing | pytest | Unit, integration, and data quality tests |
 
 ## Development Guidelines
@@ -244,14 +245,14 @@ Science demands rigor:
 
 ## Roadmap
 
-### Phase 1: Foundation (Current)
-- Core infrastructure, bronze layer, Fink client
+### Phase 1: Foundation
+- Core infrastructure, bronze/silver layers, Fink client
 
 ### Phase 2: Pipeline
 - Silver/gold layers, cross-matching with Gaia/SIMBAD, basic ML classification
 
 ### Phase 3: Agents
-- OpenAI-powered triage agent, anomaly detection, report generation
+- Provider-neutral triage agent, anomaly detection, report generation
 
 ### Phase 4: Production
 - Databricks deployment, Kafka streaming, monitoring dashboards

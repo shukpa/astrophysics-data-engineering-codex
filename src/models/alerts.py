@@ -11,7 +11,7 @@ Key astronomical measures:
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -31,7 +31,7 @@ class FilterID(int, Enum):
     I_BAND = 3
 
 
-class FinkClassification(str, Enum):
+class FinkClassification(StrEnum):
     """Fink machine-learning classification labels.
 
     These classifications are assigned by Fink's ML pipeline based on
@@ -212,9 +212,7 @@ class BronzeAlert(BaseModel):
     source_version: str | None = Field(None, description="Source API version")
 
     # Audit trail
-    raw_payload: dict[str, Any] | None = Field(
-        None, description="Original unmodified payload"
-    )
+    raw_payload: dict[str, Any] | None = Field(None, description="Original unmodified payload")
     processing_id: str | None = Field(None, description="Batch processing identifier")
 
     # Derived fields for partitioning
@@ -311,6 +309,73 @@ class AlertBatch(BaseModel):
     @property
     def count(self) -> int:
         """Number of alerts in the batch."""
+        return len(self.alerts)
+
+    @property
+    def object_ids(self) -> list[str]:
+        """List of unique object IDs in the batch."""
+        return list({alert.object_id for alert in self.alerts})
+
+
+class SilverAlert(BaseModel):
+    """Validated, normalized alert record for the silver layer.
+
+    Silver records keep only the columns needed for downstream quality checks,
+    enrichment, and anomaly scoring while preserving enough provenance to trace
+    each row back to its bronze/source alert.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    object_id: str = Field(..., min_length=3)
+    candidate_id: int | None = None
+    ra: float = Field(..., ge=0, lt=360)
+    dec: float = Field(..., ge=-90, le=90)
+    magpsf: float
+    sigmapsf: float = Field(..., ge=0)
+    filter_id: int = Field(..., ge=1, le=3)
+    filter_name: str
+    jd: float = Field(..., gt=2400000)
+    mjd: float
+    observation_date: str
+    fink_class: str | None = None
+    cds_xmatch: str | None = None
+    rb_score: float | None = Field(None, ge=0, le=1)
+    drb_score: float | None = Field(None, ge=0, le=1)
+    num_previous_detections: int = Field(default=0, ge=0)
+
+    source: str
+    source_version: str | None = None
+    bronze_processing_id: str | None = None
+    silver_processing_id: str | None = None
+    source_object_id: str
+    source_candidate_id: int | None = None
+    ingestion_timestamp: datetime
+    silver_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    raw_payload_hash: str | None = None
+    raw_payload_json: str | None = None
+
+    def to_flat_dict(self) -> dict[str, Any]:
+        """Convert to a flat dictionary for Parquet/Delta-compatible storage."""
+        return self.model_dump(mode="json")
+
+
+class SilverBatch(BaseModel):
+    """A batch of silver alerts plus processing counters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    alerts: list[SilverAlert]
+    batch_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    source_batch_id: str | None = None
+    source_count: int = 0
+    rejected_count: int = 0
+    duplicate_count: int = 0
+
+    @property
+    def count(self) -> int:
+        """Number of silver alerts in the batch."""
         return len(self.alerts)
 
     @property

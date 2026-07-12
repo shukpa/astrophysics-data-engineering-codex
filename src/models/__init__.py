@@ -5,6 +5,8 @@ from src.models.alerts import (
     BronzeAlert,
     FinkClassification,
     PreviousCandidate,
+    SilverAlert,
+    SilverBatch,
     ZTFAlert,
 )
 
@@ -13,5 +15,7 @@ __all__ = [
     "BronzeAlert",
     "FinkClassification",
     "PreviousCandidate",
+    "SilverAlert",
+    "SilverBatch",
     "ZTFAlert",
 ]

@@ -13,13 +13,12 @@ from __future__ import annotations
 
 import io
 import logging
-from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import pandas as pd
 import requests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -30,7 +29,47 @@ from tenacity import (
 logger = logging.getLogger(__name__)
 
 
-class FinkClass(str, Enum):
+FINK_TO_CANONICAL_FIELDS = {
+    "i:objectId": "objectId",
+    "i:candid": "candid",
+    "i:ra": "ra",
+    "i:dec": "dec",
+    "i:magpsf": "magpsf",
+    "i:sigmapsf": "sigmapsf",
+    "i:fid": "fid",
+    "i:jd": "jd",
+    "i:diffmaglim": "diffmaglim",
+    "i:rb": "rb",
+    "i:drb": "drb",
+}
+
+
+def canonicalize_fink_alert_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Convert a Fink REST alert record into the canonical ZTF alert shape.
+
+    Fink's live API exposes ZTF packet fields with prefixes such as ``i:`` for
+    instrument data and ``v:`` for value-added broker fields. The pipeline's
+    Bronze model intentionally uses unprefixed canonical names.
+    """
+    canonical = dict(record)
+
+    for fink_field, canonical_field in FINK_TO_CANONICAL_FIELDS.items():
+        if canonical_field not in canonical and fink_field in record:
+            canonical[canonical_field] = record[fink_field]
+
+    if "v:fink_class" not in canonical:
+        classification = record.get("v:classification")
+        if classification is not None:
+            canonical["v:fink_class"] = classification
+
+    if "d:cdsxmatch" in record:
+        canonical["d:cdsxmatch"] = record["d:cdsxmatch"]
+
+    canonical["_fink_raw_payload"] = dict(record)
+    return canonical
+
+
+class FinkClass(StrEnum):
     """Fink transient classification labels."""
 
     SN_CANDIDATE = "SN candidate"
@@ -194,6 +233,20 @@ class FinkAPIClient:
         logger.info("Fetching %d latest '%s' alerts", n, class_str)
         response = self._post("latests", payload)
         return self._response_to_dataframe(response)
+
+    def get_latest_alert_records(
+        self,
+        fink_class: FinkClass | str,
+        n: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Retrieve latest alerts as canonical dictionaries for Bronze processing.
+
+        Column filtering is intentionally not used here because the live Fink
+        ``latests`` endpoint currently returns HTTP 500 for the prefixed column
+        subset needed by AGD.
+        """
+        df = self.get_latest_alerts(fink_class=fink_class, n=n, columns=None)
+        return [canonicalize_fink_alert_record(record) for record in df.to_dict(orient="records")]
 
     def cone_search(
         self,
