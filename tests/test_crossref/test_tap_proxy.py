@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import socket
+
 import astroquery.utils.tap.conn.tapconn as tapconn
 
-from src.crossref.tap_proxy import tap_proxy_tunnel
+from src.crossref.tap_proxy import tap_proxy_tunnel, tap_socket_timeout
 
 
 def test_noop_when_proxy_url_is_none() -> None:
@@ -48,3 +50,28 @@ def test_factory_builds_tunnelled_connection() -> None:
     assert conn.port == 36389
     assert conn._tunnel_host == "gea.esac.esa.int"
     assert conn._tunnel_port == 443
+
+
+def test_socket_timeout_sets_and_restores() -> None:
+    original = socket.getdefaulttimeout()
+    with tap_socket_timeout(42.0):
+        assert socket.getdefaulttimeout() == 42.0
+    assert socket.getdefaulttimeout() == original
+
+
+def test_socket_timeout_restores_on_exception() -> None:
+    original = socket.getdefaulttimeout()
+    try:
+        with tap_socket_timeout(42.0):
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+    assert socket.getdefaulttimeout() == original
+
+
+def test_socket_timeout_noop_when_falsy() -> None:
+    original = socket.getdefaulttimeout()
+    for value in (None, 0, 0.0):
+        with tap_socket_timeout(value):
+            assert socket.getdefaulttimeout() == original
+    assert socket.getdefaulttimeout() == original

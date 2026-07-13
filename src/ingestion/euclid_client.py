@@ -30,7 +30,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.crossref.tap_proxy import tap_proxy_tunnel
+from src.crossref.tap_proxy import tap_proxy_tunnel, tap_socket_timeout
 from src.crossref.utils import query_cache_key
 from src.exceptions import EuclidAPIError
 from src.utils.config import EuclidSettings, get_settings
@@ -172,7 +172,10 @@ class EuclidClient:
         astroquery lazily; tunnels through the configured CONNECT proxy
         when set (astroquery's TAP layer ignores HTTPS_PROXY).
         """
-        with tap_proxy_tunnel(self._config.tap_proxy_url, self._config.tap_ca_bundle):
+        with (
+            tap_proxy_tunnel(self._config.tap_proxy_url, self._config.tap_ca_bundle),
+            tap_socket_timeout(self._config.timeout_seconds),
+        ):
             from astroquery.esa.euclid import Euclid
 
             self._log.debug("euclid_adql_launch", query=query)
@@ -198,7 +201,11 @@ class EuclidClient:
         }
 
     def _cache_file(self, query: str) -> Path:
-        return self._cache_dir / f"euclid_{query_cache_key(query)}.parquet"
+        # Key on the DR tag as well as the query: the MER table name can stay
+        # constant across releases (e.g. catalogue.mer_catalogue), so without
+        # the tag a Q1 pull and a DR1F pull of the same cone would collide and
+        # serve stale Q1 rows under DR1F provenance.
+        return self._cache_dir / f"euclid_{query_cache_key(query, self._config.dr_tag)}.parquet"
 
     def _cache_read(self, query: str) -> pd.DataFrame | None:
         cache_file = self._cache_file(query)

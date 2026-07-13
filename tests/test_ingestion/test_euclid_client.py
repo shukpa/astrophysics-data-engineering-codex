@@ -87,6 +87,75 @@ class TestEuclidClientUnit:
             _, provenance = client.mer_cone_search(ra=EDF_F_RA, dec=EDF_F_DEC)
         assert provenance["dr_tag"] == "DR1F"
 
+    def test_cache_key_segregated_by_dr_tag(self, tmp_path: Path) -> None:
+        # Same cone + same cache dir, different DR tags: the DR1F pull must NOT
+        # reuse the Q1 parquet (which would stamp stale Q1 rows as DR1F).
+        cache_dir = tmp_path / "shared_cache"
+        q1 = EuclidClient(euclid_settings=EuclidSettings(dr_tag="Q1"), cache_dir=cache_dir)
+        dr1f = EuclidClient(euclid_settings=EuclidSettings(dr_tag="DR1F"), cache_dir=cache_dir)
+
+        query = q1._build_mer_query(EDF_F_RA, EDF_F_DEC, 0.1, MER_COLUMNS)
+        assert q1._cache_file(query) != dr1f._cache_file(query)
+
+        with patch.object(
+            EuclidClient, "_execute_adql", return_value=mer_raw_result()
+        ) as mock_query:
+            _, prov_q1 = q1.mer_cone_search(ra=EDF_F_RA, dec=EDF_F_DEC, radius_deg=0.1)
+            _, prov_dr1f = dr1f.mer_cone_search(ra=EDF_F_RA, dec=EDF_F_DEC, radius_deg=0.1)
+
+        assert mock_query.call_count == 2  # no cross-release cache collision
+        assert prov_q1["dr_tag"] == "Q1"
+        assert prov_dr1f["dr_tag"] == "DR1F"
+        assert prov_dr1f["cache_hit"] is False
+
+    def test_execute_adql_applies_timeout_and_proxy(self, tmp_path: Path, monkeypatch) -> None:
+        import contextlib
+        import sys
+        import types
+
+        import astropy.table
+
+        calls: dict[str, object] = {}
+
+        @contextlib.contextmanager
+        def spy_timeout(seconds):
+            calls["timeout"] = seconds
+            yield
+
+        @contextlib.contextmanager
+        def spy_tunnel(url, ca_bundle=None):
+            calls["proxy"] = (url, ca_bundle)
+            yield
+
+        monkeypatch.setattr("src.ingestion.euclid_client.tap_socket_timeout", spy_timeout)
+        monkeypatch.setattr("src.ingestion.euclid_client.tap_proxy_tunnel", spy_tunnel)
+
+        class FakeJob:
+            def get_results(self):
+                return astropy.table.Table(
+                    {
+                        "object_id": [1],
+                        "right_ascension": [EDF_F_RA],
+                        "declination": [EDF_F_DEC],
+                    }
+                )
+
+        fake = types.ModuleType("astroquery.esa.euclid")
+        fake.Euclid = types.SimpleNamespace(launch_job=lambda _query: FakeJob())
+        monkeypatch.setitem(sys.modules, "astroquery.esa.euclid", fake)
+
+        client = make_client(
+            tmp_path,
+            timeout_seconds=123,
+            tap_proxy_url="http://127.0.0.1:36389",
+            tap_ca_bundle="/root/.ccr/ca.crt",
+        )
+        df, _ = client.mer_cone_search(ra=EDF_F_RA, dec=EDF_F_DEC)
+
+        assert calls["timeout"] == 123
+        assert calls["proxy"] == ("http://127.0.0.1:36389", "/root/.ccr/ca.crt")
+        assert len(df) == 1
+
     def test_query_failure_raises_euclid_api_error(self, tmp_path: Path) -> None:
         client = make_client(tmp_path)
         with (
