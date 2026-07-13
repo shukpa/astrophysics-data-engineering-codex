@@ -445,6 +445,13 @@ class GoldAlert(BaseModel):
     is_likely_stellar: bool | None = None
     stellar_evidence: str | None = None
 
+    # Euclid lens-field cross-match (time-delay cosmography channel).
+    # A lens_field_transient hit ALWAYS escalates to human review in the
+    # anomaly agent (Phase 4), regardless of ML score.
+    lens_field_transient: bool = False
+    lens_name: str | None = None
+    lens_separation_arcsec: float | None = Field(None, ge=0)
+
     # Light-curve features (from prv_candidates + current epoch)
     lc_n_detections: int = Field(default=1, ge=1)
     lc_time_span_days: float | None = Field(None, ge=0)
@@ -485,6 +492,7 @@ class GoldBatch(BaseModel):
     source_count: int = 0
     matched_gaia_count: int = 0
     matched_simbad_count: int = 0
+    lens_matched_count: int = 0
     crossmatch_failed_count: int = 0
 
     @property

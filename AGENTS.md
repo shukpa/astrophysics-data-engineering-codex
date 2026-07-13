@@ -41,7 +41,9 @@ Rules for every agent:
 
 ## How Any Agent Should Start Work
 
-1. Read this file first, then `AGD_FORWARD_PLAN.md` for current phase state.
+1. Read this file first, then `AGD_FORWARD_PLAN.md` for current phase state, then
+   `SCIENCE_GOALS.md` for the science rules of inference (it governs the science;
+   the plan governs sequencing).
 2. Scan the current repo state before proposing changes: `rg --files`,
    `git status --short`, and the relevant files under `src/`, `tests/`, and `config/`.
 3. `src/utils/config.py` (Pydantic settings) is the **single runtime source of
@@ -120,15 +122,25 @@ black src/ scripts/ tests/
   `CROSSMATCH_TAP_CA_BUNDLE` if the proxy re-terminates TLS) so the Gaia client
   tunnels through it. Unset by default = direct network. SIMBAD needs nothing
   (it uses `requests`, which honours `HTTPS_PROXY`).
-- Euclid open-data ingestion, the multi-probe constraint harness, the anomaly
-  agent, and the GW counterpart channel are the next phases — see
-  `AGD_FORWARD_PLAN.md`.
+- **Phase 2 (Euclid Q1 ingestion) landed:** `EuclidClient` (ESA TAP/ADQL via
+  astroquery, retry + Parquet cache + per-query provenance with a DR tag —
+  `Q1` now, flip `EUCLID_DR_TAG` to `DR1F` at the DR1-Foundation swap-in);
+  MER final-catalogue cone searches into Euclid bronze; SLDE strong-lens
+  catalogue (file-based — it is NOT exposed via ESA TAP, verified against
+  `tap_schema`) through bronze→silver with grade filtering; gold-layer
+  lens-field cross-match flags `lens_field_transient` (these always escalate
+  to human review in Phase 4). Same `EUCLID_TAP_PROXY_URL` convention as the
+  Gaia client behind a CONNECT proxy. Re-run `EuclidClient.discover_tables`
+  after each data release before trusting table names.
+- The multi-probe constraint harness, the anomaly agent, and the GW
+  counterpart channel are the next phases — see `AGD_FORWARD_PLAN.md`.
 - No production agent runtime or provider has been selected; the platform stays
   provider-neutral by design.
 
 ## Key Files
 
 - `AGD_FORWARD_PLAN.md`: roadmap and per-phase execution plan
+- `SCIENCE_GOALS.md`: science definition + rules of inference (governs on conflict)
 - `.github/workflows/ci.yml`: CI (ruff + black + pytest on 3.11 / 3.12)
 - `src/ingestion/fink_api_client.py`: primary alert ingestion client
 - `src/processing/bronze_processor.py`: bronze layer processing
@@ -138,8 +150,16 @@ black src/ scripts/ tests/
   enrichment, discriminator, light-curve features)
 - `src/crossref/gaia_client.py` / `src/crossref/simbad_client.py`: catalog
   cone-search clients (retry, timeout, Parquet cache)
+- `src/ingestion/euclid_client.py`: ESA Euclid TAP client (MER catalogue,
+  schema discovery, provenance, DR-tagged cache)
+- `src/processing/euclid_lens_processor.py`: SLDE lens catalogue
+  bronze/silver (file-based; grade filtering)
+- `src/models/lenses.py`: EuclidLensCandidate / EuclidLensCatalog
+- `scripts/ingest_euclid_q1.py`: Euclid Q1 ingestion (live MER + SLDE file;
+  `--skip-mer` for offline environments)
 - `scripts/run_fink_gold_smoke.py`: bronze→silver→gold smoke run
-  (`--source synthetic --no-crossmatch` for offline environments)
+  (`--source synthetic --no-crossmatch` for offline environments;
+  `--lens-catalog` to exercise the lens-field cross-match)
 - `src/utils/config.py`: runtime settings and environment-variable contract
 - `config/default.yaml`: non-loaded planning config for future phases
 - `tests/conftest.py`: shared test fixtures

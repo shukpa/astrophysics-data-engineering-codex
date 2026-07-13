@@ -1,0 +1,177 @@
+[
+  {
+    "name": "EUCL J175707.2+653936",
+    "ra": 269.28,
+    "dec": 65.66,
+    "grade": "A",
+    "score": 0.55,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 0.6
+  },
+  {
+    "name": "EUCL J040318.5-484427",
+    "ra": 60.827,
+    "dec": -48.741,
+    "grade": "A",
+    "score": 0.6,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 1.02
+  },
+  {
+    "name": "EUCL J033013.0-282255",
+    "ra": 52.554,
+    "dec": -28.382,
+    "grade": "A",
+    "score": 0.65,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 1.44
+  },
+  {
+    "name": "EUCL J175733.8+654449",
+    "ra": 269.391,
+    "dec": 65.747,
+    "grade": "A",
+    "score": 0.7,
+    "discovery_engine": "citizen-science"
+  },
+  {
+    "name": "EUCL J040345.1-483914",
+    "ra": 60.938,
+    "dec": -48.654,
+    "grade": "A",
+    "score": 0.75,
+    "discovery_engine": "expert",
+    "theta_e_arcsec": 2.28
+  },
+  {
+    "name": "EUCL J033039.6-281742",
+    "ra": 52.665,
+    "dec": -28.295,
+    "grade": "A",
+    "score": 0.8,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 2.7
+  },
+  {
+    "name": "EUCL J175800.5+655002",
+    "ra": 269.502,
+    "dec": 65.834,
+    "grade": "A",
+    "score": 0.85,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 3.12
+  },
+  {
+    "name": "EUCL J040411.8-483401",
+    "ra": 61.049,
+    "dec": -48.567,
+    "grade": "A",
+    "score": 0.9,
+    "discovery_engine": "SLDE"
+  },
+  {
+    "name": "EUCL J033106.2-281228",
+    "ra": 52.776,
+    "dec": -28.208,
+    "grade": "B",
+    "score": 0.95,
+    "discovery_engine": "citizen-science",
+    "theta_e_arcsec": 1.02
+  },
+  {
+    "name": "EUCL J175827.1+655515",
+    "ra": 269.613,
+    "dec": 65.921,
+    "grade": "B",
+    "score": 0.55,
+    "discovery_engine": "expert",
+    "theta_e_arcsec": 1.44
+  },
+  {
+    "name": "EUCL J040438.4-482848",
+    "ra": 61.16,
+    "dec": -48.48,
+    "grade": "B",
+    "score": 0.6,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 1.86
+  },
+  {
+    "name": "EUCL J033132.9-280715",
+    "ra": 52.887,
+    "dec": -28.121,
+    "grade": "B",
+    "score": 0.65,
+    "discovery_engine": "SLDE"
+  },
+  {
+    "name": "EUCL J175853.8+660028",
+    "ra": 269.724,
+    "dec": 66.008,
+    "grade": "B",
+    "score": 0.7,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 2.7
+  },
+  {
+    "name": "EUCL J040505.0-482334",
+    "ra": 61.271,
+    "dec": -48.393,
+    "grade": "B",
+    "score": 0.75,
+    "discovery_engine": "citizen-science",
+    "theta_e_arcsec": 3.12
+  },
+  {
+    "name": "EUCL J033159.5-280202",
+    "ra": 52.998,
+    "dec": -28.034,
+    "grade": "B",
+    "score": 0.8,
+    "discovery_engine": "expert",
+    "theta_e_arcsec": 0.6
+  },
+  {
+    "name": "EUCL J175920.4+660542",
+    "ra": 269.835,
+    "dec": 66.095,
+    "grade": "B",
+    "score": 0.85,
+    "discovery_engine": "SLDE"
+  },
+  {
+    "name": "EUCL J040531.7-481821",
+    "ra": 61.382,
+    "dec": -48.306,
+    "grade": "C",
+    "score": 0.9,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 1.44
+  },
+  {
+    "name": "EUCL J033226.2-275649",
+    "ra": 53.109,
+    "dec": -27.947,
+    "grade": "C",
+    "score": 0.95,
+    "discovery_engine": "SLDE",
+    "theta_e_arcsec": 1.86
+  },
+  {
+    "name": "EUCL J175947.0+661055",
+    "ra": 269.946,
+    "dec": 66.182,
+    "grade": "C",
+    "score": 0.55,
+    "discovery_engine": "citizen-science",
+    "theta_e_arcsec": 2.28
+  },
+  {
+    "name": "EUCL J040558.3-481308",
+    "ra": 61.493,
+    "dec": -48.219,
+    "grade": "C",
+    "score": 0.6,
+    "discovery_engine": "expert"
+  }
+]

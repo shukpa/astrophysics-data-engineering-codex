@@ -88,6 +88,8 @@ class StorageSettings(BaseSettings):
     bronze_path: str = "bronze/alerts"
     silver_path: str = "silver/alerts"
     gold_path: str = "gold/alerts"
+    euclid_bronze_path: str = "bronze/euclid"
+    euclid_silver_path: str = "silver/euclid"
     checkpoint_path: str = "checkpoints"
     file_format: Literal["parquet", "delta", "json"] = "parquet"
     partition_columns: list[str] = Field(default_factory=lambda: ["observation_date"])
@@ -107,6 +109,16 @@ class StorageSettings(BaseSettings):
     def gold_full_path(self) -> Path:
         """Get the full path to gold layer storage."""
         return self.base_path / self.gold_path
+
+    @property
+    def euclid_bronze_full_path(self) -> Path:
+        """Get the full path to Euclid bronze layer storage."""
+        return self.base_path / self.euclid_bronze_path
+
+    @property
+    def euclid_silver_full_path(self) -> Path:
+        """Get the full path to Euclid silver layer storage."""
+        return self.base_path / self.euclid_silver_path
 
     @property
     def checkpoint_full_path(self) -> Path:
@@ -177,6 +189,41 @@ class CrossmatchSettings(BaseSettings):
     tap_ca_bundle: str | None = None
 
 
+class EuclidSettings(BaseSettings):
+    """Configuration for Euclid open-data ingestion (batch TAP catalogues).
+
+    Attributes:
+        mer_table: Fully qualified MER final catalogue table on the ESA TAP
+            service (verified live against tap_schema on 2026-07-12).
+        timeout_seconds: Timeout for Euclid TAP queries.
+        max_rows: Maximum rows to request per MER cone search.
+        cache_path: Directory for the local Parquet query cache
+            (relative to StorageSettings.base_path).
+        dr_tag: Data-release tag stamped into provenance for every ingested
+            row ("Q1" now; switch to "DR1F" at the DR1-Foundation swap-in).
+        lens_allowed_grades: SLDE candidate grades kept by the silver layer.
+        lens_match_radius_arcsec: Radius for the gold-layer lens-field
+            cross-match (transient within this distance of a lens candidate
+            is flagged ``lens_field_transient``). Default is generous vs.
+            typical Einstein radii (~1-3") to catch offset lensed images.
+        tap_proxy_url: Optional CONNECT-proxy URL for Euclid TAP queries
+            (astroquery's TAP layer ignores HTTPS_PROXY; see tap_proxy.py).
+        tap_ca_bundle: Optional CA bundle when the proxy re-terminates TLS.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EUCLID_")
+
+    mer_table: str = "catalogue.mer_catalogue"
+    timeout_seconds: int = Field(default=60, ge=1, le=600)
+    max_rows: int = Field(default=500, ge=1, le=100000)
+    cache_path: str = "cache/euclid"
+    dr_tag: str = "Q1"
+    lens_allowed_grades: list[str] = Field(default_factory=lambda: ["A", "B"])
+    lens_match_radius_arcsec: float = Field(default=10.0, gt=0, le=3600)
+    tap_proxy_url: str | None = None
+    tap_ca_bundle: str | None = None
+
+
 class LoggingSettings(BaseSettings):
     """Configuration for structured logging.
 
@@ -209,6 +256,7 @@ class Settings(BaseSettings):
         storage: Data storage configuration.
         processing: Processing pipeline configuration.
         crossmatch: Catalog cross-match configuration (gold layer).
+        euclid: Euclid open-data ingestion configuration.
         logging: Logging configuration.
     """
 
@@ -228,6 +276,7 @@ class Settings(BaseSettings):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     processing: ProcessingSettings = Field(default_factory=ProcessingSettings)
     crossmatch: CrossmatchSettings = Field(default_factory=CrossmatchSettings)
+    euclid: EuclidSettings = Field(default_factory=EuclidSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     @model_validator(mode="after")
