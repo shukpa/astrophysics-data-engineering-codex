@@ -62,7 +62,8 @@ astrophysics-data-engineering-codex/
 │   ├── models/
 │   │   └── alerts.py               # Pydantic models for ZTF/Fink alerts
 │   ├── ingestion/
-│   │   └── fink_api_client.py      # Fink REST API client (retry/backoff)
+│   │   ├── fink_api_client.py      # Fink REST API client (retry/backoff)
+│   │   └── euclid_client.py        # ESA Euclid TAP client (MER, provenance, DR tag)
 │   ├── crossref/
 │   │   ├── gaia_client.py          # Gaia DR3 cone search (retry, Parquet cache)
 │   │   ├── simbad_client.py        # SIMBAD cone search (retry, Parquet cache)
@@ -70,13 +71,16 @@ astrophysics-data-engineering-codex/
 │   ├── processing/
 │   │   ├── bronze_processor.py     # Bronze layer processing
 │   │   ├── silver_processor.py     # Validation, quality filtering, deduplication
-│   │   └── gold_processor.py       # Cross-match enrichment, discriminator, LC features
+│   │   ├── gold_processor.py       # Cross-match enrichment, discriminator, LC features,
+│   │   │                           #   Euclid lens-field flagging
+│   │   └── euclid_lens_processor.py # SLDE lens catalogue bronze/silver
 │   ├── utils/
 │   │   └── config.py               # Pydantic-based runtime configuration
 │   └── agents/                     # (Future: AI agent implementations)
 ├── scripts/
 │   ├── run_fink_silver_smoke.py    # Live bronze→silver smoke run
-│   └── run_fink_gold_smoke.py      # Bronze→silver→gold smoke (live or synthetic)
+│   ├── run_fink_gold_smoke.py      # Bronze→silver→gold smoke (live or synthetic)
+│   └── ingest_euclid_q1.py         # Euclid Q1: live MER TAP + SLDE lens catalogue
 ├── tests/
 │   ├── conftest.py                 # Shared pytest fixtures
 │   ├── test_ingestion/             # Fink API client tests
@@ -108,11 +112,13 @@ astrophysics-data-engineering-codex/
 - [x] Gold layer + Gaia DR3 / SIMBAD cross-match (Phase 1): cone-search clients with
       retry + Parquet cache, star/extragalactic discriminator, light-curve features,
       provenance pointers (no raw payload JSON in gold)
-- [x] Test framework + bronze→silver→gold smoke script (live or offline synthetic)
+- [x] Euclid Q1 open-data ingestion (Phase 2): ESA TAP client (MER final catalogue →
+      bronze with DR-tagged provenance), SLDE strong-lens catalogue → bronze/silver
+      with grade filtering, and the gold-layer `lens_field_transient` cross-match
+- [x] Test framework + smoke/ingest scripts (live or offline synthetic)
 
 **Next — see [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md) for the full plan:**
 
-- [ ] Euclid Q1 open-data ingestion + strong-lens catalogue (`feat/euclid-q1`)
 - [ ] Multi-probe constraint & lensing science harness (`feat/constraint-harness`)
 - [ ] Lens-aware anomaly agent (`feat/anomaly-agent`)
 - [ ] Multi-messenger GW counterpart channel (`feat/gw-counterparts`)
@@ -280,7 +286,7 @@ detail) is [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md). Summary:
 |-------|--------|-------|
 | **0 — Repo convergence** ✅ | `chore/repo-convergence` | CI, single config source of truth, timezone-aware datetimes, hardened agent contract |
 | **1 — Gold + cross-match** ✅ | `feat/gold-crossref` | Silver→gold; Gaia DR3 / SIMBAD cone-search cross-match; star/extragalactic discrimination |
-| **2 — Euclid Q1 ingestion** | `feat/euclid-q1` | Batch TAP/ADQL ingestion of Euclid open data (MER catalogue + Q1 strong-lens sample) through the medallion; transient↔lens-field cross-match |
+| **2 — Euclid Q1 ingestion** ✅ | `feat/euclid-q1` | Batch TAP/ADQL ingestion of Euclid open data (MER catalogue + Q1 strong-lens sample) through the medallion; transient↔lens-field cross-match |
 | **3 — Constraint & lensing harness** | `feat/constraint-harness` | Falsifiable multi-probe cosmology fit (DESI + CMB + SNe + weak lensing → w₀, wₐ, γ vs GR+ΛCDM) and strong-lens statistics |
 | **4 — Anomaly agent** | `feat/anomaly-agent` | Lens-aware, provider-neutral warm-path anomaly assessment + nightly report |
 | **5 — GW counterpart channel** | `feat/gw-counterparts` | LIGO/Virgo/KAGRA public alerts → skymap-filtered ZTF/Rubin counterpart search; GW standard-siren (graviton-leakage) test |

@@ -73,6 +73,12 @@ class RateLimitError(FinkAPIError):
     pass
 
 
+class EuclidAPIError(IngestionError):
+    """Error communicating with the Euclid archive (ESA TAP)."""
+
+    pass
+
+
 # Processing Errors
 class ProcessingError(AGDError):
     """Error during data processing in the pipeline."""

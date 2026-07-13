@@ -20,9 +20,15 @@ from typing import Any
 
 from src.ingestion.fink_api_client import FinkAPIClient
 from src.processing.bronze_processor import BronzeProcessor
+from src.processing.euclid_lens_processor import EuclidLensProcessor, load_lens_rows
 from src.processing.gold_processor import GoldProcessor
 from src.processing.silver_processor import SilverProcessor
-from src.utils.config import CrossmatchSettings, ProcessingSettings, StorageSettings
+from src.utils.config import (
+    CrossmatchSettings,
+    EuclidSettings,
+    ProcessingSettings,
+    StorageSettings,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,6 +46,13 @@ def parse_args() -> argparse.Namespace:
         "--no-crossmatch",
         action="store_true",
         help="Skip Gaia/SIMBAD queries (offline mode); match columns stay null.",
+    )
+    parser.add_argument(
+        "--lens-catalog",
+        type=Path,
+        default=None,
+        help="Optional Euclid SLDE catalogue (JSON/CSV) for the gold-layer "
+        "lens-field cross-match (flags lens_field_transient).",
     )
     return parser.parse_args()
 
@@ -81,10 +94,22 @@ def run_smoke(
     storage_base: Path,
     source: str = "live",
     enable_crossmatch: bool = True,
+    lens_catalog_path: Path | None = None,
 ) -> dict[str, Any]:
     storage = StorageSettings(base_path=storage_base, file_format="parquet")
     processing = ProcessingSettings(schema_validation_mode="strict")
     crossmatch = CrossmatchSettings()
+    euclid_settings = EuclidSettings()
+
+    lens_catalog = None
+    if lens_catalog_path is not None:
+        lens_processor = EuclidLensProcessor(
+            storage_settings=storage, euclid_settings=euclid_settings
+        )
+        catalog, _ = lens_processor.process_catalog(
+            load_lens_rows(lens_catalog_path), source=str(lens_catalog_path)
+        )
+        lens_catalog = catalog.candidates
 
     if source == "synthetic":
         raw_alerts = synthetic_alert_records(fink_class=fink_class, n=limit)
@@ -114,6 +139,8 @@ def run_smoke(
         storage_settings=storage,
         crossmatch_settings=crossmatch,
         enable_crossmatch=enable_crossmatch,
+        lens_catalog=lens_catalog,
+        euclid_settings=euclid_settings,
     )
     gold_batch = gold_processor.process_batch(silver_batch)
     gold_output = gold_processor.write_batch(gold_batch)
@@ -121,6 +148,7 @@ def run_smoke(
     return {
         "source": source,
         "crossmatch_enabled": enable_crossmatch,
+        "lens_catalog_size": len(lens_catalog) if lens_catalog else 0,
         "requested": limit,
         "fetched": len(raw_alerts),
         "bronze_count": bronze_batch.count,
@@ -130,6 +158,7 @@ def run_smoke(
         "gold_count": gold_batch.count,
         "gold_gaia_matched": gold_batch.matched_gaia_count,
         "gold_simbad_matched": gold_batch.matched_simbad_count,
+        "gold_lens_matched": gold_batch.lens_matched_count,
         "gold_crossmatch_failed": gold_batch.crossmatch_failed_count,
         "bronze_output": str(bronze_output),
         "silver_output": str(silver_output),
@@ -145,6 +174,7 @@ def main() -> None:
         storage_base=args.storage_base,
         source=args.source,
         enable_crossmatch=not args.no_crossmatch,
+        lens_catalog_path=args.lens_catalog,
     )
     for key, value in summary.items():
         print(f"{key}: {value}")

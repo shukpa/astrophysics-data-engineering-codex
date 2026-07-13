@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import http.client
+import socket
 import ssl
 import types
 import urllib.parse
@@ -68,3 +69,26 @@ def tap_proxy_tunnel(
         yield
     finally:
         tapconn.httplib = original_httplib
+
+
+@contextlib.contextmanager
+def tap_socket_timeout(seconds: float | None) -> Iterator[None]:
+    """Bound blocking astroquery TAP socket operations to ``seconds``.
+
+    astroquery's TAP layer opens raw ``http.client`` connections without a
+    timeout, so a stalled service hangs forever regardless of any configured
+    timeout. Those connections fall back to the process-wide socket default,
+    so setting it here bounds both the direct and proxy-tunnelled paths. The
+    previous default is always restored on exit; a falsy ``seconds`` is a
+    no-op (leaves the ambient default untouched).
+    """
+    if not seconds or seconds <= 0:
+        yield
+        return
+
+    previous = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(float(seconds))
+    try:
+        yield
+    finally:
+        socket.setdefaulttimeout(previous)

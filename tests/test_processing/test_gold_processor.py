@@ -343,6 +343,74 @@ class TestLightCurveFeatures:
 
 
 # ---------------------------------------------------------------------------
+# Euclid lens-field cross-match
+# ---------------------------------------------------------------------------
+
+
+class TestLensFieldCrossmatch:
+    def lens(self, name="EUCL Jtest", ra=193.822, dec=2.896, grade="A"):
+        from src.models.lenses import EuclidLensCandidate
+
+        return EuclidLensCandidate(name=name, ra=ra, dec=dec, grade=grade)
+
+    def test_transient_near_lens_is_flagged(self, tmp_path) -> None:
+        # Alert 2" north of the lens; default radius 10".
+        lens = self.lens(dec=2.896 - 2.0 / 3600.0)
+        processor = make_processor(tmp_path, enable_crossmatch=False)
+        processor_with_lens = GoldProcessor(
+            storage_settings=processor._storage,
+            crossmatch_settings=processor._crossmatch,
+            gaia_client=FakeGaiaClient(None),
+            simbad_client=FakeSimbadClient(None),
+            enable_crossmatch=False,
+            lens_catalog=[lens, self.lens(name="EUCL Jfar", ra=10.0, dec=10.0)],
+        )
+        batch = processor_with_lens.process_batch(make_batch(make_silver_alert()))
+
+        alert = batch.alerts[0]
+        assert alert.lens_field_transient is True
+        assert alert.lens_name == "EUCL Jtest"
+        assert alert.lens_separation_arcsec == pytest.approx(2.0, abs=0.05)
+        assert batch.lens_matched_count == 1
+
+    def test_far_transient_not_flagged(self, tmp_path) -> None:
+        processor = GoldProcessor(
+            storage_settings=StorageSettings(base_path=tmp_path),
+            crossmatch_settings=CrossmatchSettings(cache_enabled=False),
+            gaia_client=FakeGaiaClient(None),
+            simbad_client=FakeSimbadClient(None),
+            enable_crossmatch=False,
+            lens_catalog=[self.lens(ra=10.0, dec=10.0)],
+        )
+        alert = processor.process_batch(make_batch(make_silver_alert())).alerts[0]
+        assert alert.lens_field_transient is False
+        assert alert.lens_name is None
+        assert alert.lens_separation_arcsec is None
+
+    def test_radius_is_config_driven(self, tmp_path) -> None:
+        from src.utils.config import EuclidSettings
+
+        lens = self.lens(dec=2.896 - 8.0 / 3600.0)  # 8" away
+        processor = GoldProcessor(
+            storage_settings=StorageSettings(base_path=tmp_path),
+            crossmatch_settings=CrossmatchSettings(cache_enabled=False),
+            gaia_client=FakeGaiaClient(None),
+            simbad_client=FakeSimbadClient(None),
+            enable_crossmatch=False,
+            lens_catalog=[lens],
+            euclid_settings=EuclidSettings(lens_match_radius_arcsec=5.0),
+        )
+        alert = processor.process_batch(make_batch(make_silver_alert())).alerts[0]
+        assert alert.lens_field_transient is False  # 8" > 5" radius
+
+    def test_no_catalog_defaults_false(self, tmp_path) -> None:
+        processor = make_processor(tmp_path, enable_crossmatch=False)
+        alert = processor.process_batch(make_batch(make_silver_alert())).alerts[0]
+        assert alert.lens_field_transient is False
+        assert "lens_field_transient" in alert.to_flat_dict()
+
+
+# ---------------------------------------------------------------------------
 # Provenance + storage
 # ---------------------------------------------------------------------------
 
