@@ -7,6 +7,8 @@
 
 **Multi-agent operating model (deliberate, do not undo):** This repo is evolved by multiple AI toolchains in rotation — currently Claude (Fable) executing this plan, then Codex + GPT 5.6 Sol for further evolution. The removal of `CLAUDE.md`/`CLAUDE_CODE_CONTEXT.md` was a deliberate de-provider-ing of the repo. **`AGENTS.md` is the single, provider-neutral operating contract for every agent.** No agent re-introduces provider-specific context files, model assumptions, or tooling lock-in. Coordination between agents happens through three artifacts only: `AGENTS.md` (rules), this plan file committed to the repo (roadmap + phase state), and PR history (provenance). Each phase's PR description must state what was done and what the next agent needs to know, so a different toolchain can pick up any phase cold.
 
+**Science governance:** `SCIENCE_GOALS.md` is the standing definition of what the project is scientifically for and the rules of inference (two decoupled modes, tiered science cases, statistical/constraint rigor, metrics). If it and this plan conflict, `SCIENCE_GOALS.md` governs the science; this plan governs the sequencing.
+
 ---
 
 ## 1. Repo vetting summary (verified 2026-07-12)
@@ -157,14 +159,15 @@ None of these datasets "detect a dimension." Extra-dimensional models are constr
 
 **Acceptance:** both notebooks run top-to-bottom from local data; every conclusion traces to a computed number; the 3a verdict cell and 3b sensitivity-floor figure exist and are re-runnable against DR1-Foundation.
 
-### Phase 4 — Anomaly agent, lens-aware  `feat/anomaly-agent`
-*Existing roadmap item, now with the lensing hook. Provider-neutral per AGENTS.md.*
+### Phase 4 — Classification framework + anomaly agent, lens-aware  `feat/anomaly-agent`
+*Existing roadmap item, expanded per the 2026-07-12 SCIENCE_GOALS reconciliation: this phase also owns Tier-1 classification and the metrics that make Tier-2 flags statistically defensible.*
 
-1. `src/agents/anomaly_agent.py` — warm path only. Inputs: gold row + cross-match context + `lens_field_transient` flag. Output: structured assessment (anomaly score, rationale, recommended action) with full provenance.
-2. Escalation rule: `lens_field_transient` hits always escalate to human review regardless of ML score.
-3. Nightly CLI report (`scripts/nightly_report.py`): counts by class, new lens-field matches, top anomalies.
+1. **Classification-confidence framework (Tier 1).** Hot-path baseline classifier for known types (Fink's broker classes as the v0 baseline, own light-curve-feature model as the upgrade path). Every classified event carries: primary class, confidence (0–1), alternative classes with scores, anomaly score (fit quality of the best class), and follow-up priority (LOW/MEDIUM/HIGH/CRITICAL). `lens_field_transient` and `gw_counterpart_candidate` are CRITICAL regardless of ML score.
+2. `src/agents/anomaly_agent.py` — warm path only. Inputs: gold row + cross-match context + `lens_field_transient` flag. Output: structured assessment with full provenance carrying the four mandatory rigor fields from SCIENCE_GOALS Methodology: baseline comparison (expected behaviour of most likely class), deviation in sigma, false-alarm probability given alerts processed, and known-systematic exclusion.
+3. Escalation rule: CRITICAL-priority events (incl. every `lens_field_transient` hit) always escalate to human review regardless of ML score.
+4. Nightly CLI report (`scripts/nightly_report.py`): counts by class, new lens-field matches, top anomalies, **and system metrics** — alert processing latency, classification counts/accuracy on known-type sets, anomaly false-positive tracking, cross-match completeness.
 
-**Acceptance:** agent runs on a real nightly batch; report generated; zero LLM calls in bronze/silver/gold path.
+**Acceptance:** agent runs on a real nightly batch; every flag carries the four rigor fields; report generated with metrics section; zero LLM calls in bronze/silver/gold path.
 
 ### Phase 5 — Multi-messenger GW counterpart channel  `feat/gw-counterparts`
 *The channel where the time-domain pipeline itself does extra-dimensional physics. Builds directly on Phases 1 and 4.*
@@ -175,6 +178,13 @@ None of these datasets "detect a dimension." Extra-dimensional models are constr
 4. `notebooks/gw_siren_dimensions.ipynb` — the physics: reproduce the GW170817 D = 4 constraint from published d_L^GW and EM host distance (validation cell), then a forecast cell: how the constraint on graviton leakage / number of large dimensions scales with N well-localised BNS events with counterparts in the Rubin era. Staged like 3a/3b: reproduce standard result first, quantify sensitivity, only then discuss braneworld parameter space.
 
 **Acceptance:** GW alert client tested against archived GraceDB events; cross-match runs end-to-end on a replayed historical trigger (GW170817-era ZTF data or simulated stream); notebook reproduces the published D ≈ 4.0 ± 0.1 constraint before any forecasting.
+
+### Science-goals reconciliation (2026-07-12)
+Audit of this plan against the updated `SCIENCE_GOALS.md` found the two documents aligned on the two-modes commitment, the data-landscape roles, all three Tier-3 constraint channels (→ Phases 3a, 3b, 5), staged-notebook rigor, sensitivity floors, and the lens-field/GW CRITICAL-escalation rules. Three goals items had no plan home and were assigned as follows (Phase 4 expanded accordingly):
+
+1. **Tier-1 classification-confidence framework** (own baseline classifier beyond Fink passthrough; class/confidence/alternatives/anomaly-score/priority) → Phase 4 item 1.
+2. **Statistical-rigor fields on every anomaly flag** (baseline, sigma, false-alarm probability, systematics exclusion) → Phase 4 item 2.
+3. **Metrics instrumentation** (latency, accuracy, FAP tracking, cross-match completeness; GW trigger→candidate-list latency lands with Phase 5) → Phase 4 item 4 + Phase 5.
 
 ### November 2026 checkpoint — DR1-Foundation
 When DR1-Foundation drops (~1900 deg²): re-run Phase 2 ingestion with `DR tag = DR1F`; re-run notebook 3b (the sensitivity floor tells you immediately which questions just became answerable); fold Euclid weak-lensing growth constraints into notebook 3a when consortium likelihoods/chains publish. This is the order-of-magnitude upgrade to the lensing axis.

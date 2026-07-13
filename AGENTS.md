@@ -41,7 +41,9 @@ Rules for every agent:
 
 ## How Any Agent Should Start Work
 
-1. Read this file first, then `AGD_FORWARD_PLAN.md` for current phase state.
+1. Read this file first, then `AGD_FORWARD_PLAN.md` for current phase state, then
+   `SCIENCE_GOALS.md` for the science rules of inference (it governs the science;
+   the plan governs sequencing).
 2. Scan the current repo state before proposing changes: `rg --files`,
    `git status --short`, and the relevant files under `src/`, `tests/`, and `config/`.
 3. `src/utils/config.py` (Pydantic settings) is the **single runtime source of
@@ -138,6 +140,7 @@ black src/ scripts/ tests/
 ## Key Files
 
 - `AGD_FORWARD_PLAN.md`: roadmap and per-phase execution plan
+- `SCIENCE_GOALS.md`: science definition + rules of inference (governs on conflict)
 - `.github/workflows/ci.yml`: CI (ruff + black + pytest on 3.11 / 3.12)
 - `src/ingestion/fink_api_client.py`: primary alert ingestion client
 - `src/processing/bronze_processor.py`: bronze layer processing
