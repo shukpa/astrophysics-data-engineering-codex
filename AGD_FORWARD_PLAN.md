@@ -140,8 +140,10 @@ None of these datasets "detect a dimension." Extra-dimensional models are constr
 
 **Acceptance:** live TAP query returns MER rows into bronze; SLDE catalogue queryable locally; `lens_field_transient` job runs (likely empty at 63 deg² — fine); schema documented for DR1-Foundation swap-in.
 
-### Phase 3 — Constraint & lensing science harness  `feat/constraint-harness`
+### Phase 3 — Constraint & lensing science harness  `feat/constraint-harness`  ✅ landed
 *The falsifiable version of the extra-dimensional thread. Notebook-first. Two tracks, ordered by constraining power.*
+
+> **Landed (2026-07-14).** New analysis layer `src/analysis/` (strictly downstream of gold; the pipeline never imports it). `constraints.py` transcribes the published DESI DR2 (arXiv:2503.14738), Planck 2018 (1807.06209), KiDS-1000 (2007.15632), DES Y3 (2105.13549) and DES-SN5YR (2401.02929) values with arXiv provenance — from source, not memory. `cosmology.py` = CPL w(z), flat w0waCDM distances (astropy), growth index γ, S8, σ-tension. `lensing.py` = SIS/SIE θ_E ↔ σ_v ↔ projected mass on astropy angular-diameter distances, plus the 1/√N sensitivity floor. Both notebooks run top-to-bottom from local data and are committed executed: `notebooks/combined_probe_constraints.ipynb` (3a verdict cell) and `notebooks/euclid_lens_statistics.ipynb` (3b sensitivity-floor figure). 34 new unit tests assert every relation against physics identities and the transcribed numbers; ruff + black clean; full suite 193 passed. Runtime deps gained `numpy`/`scipy`; `matplotlib`/`nbformat`/`nbconvert` are dev-only. DR1-Foundation swap-in = update `constraints.py` + N≈500→7000, no code change. **Known follow-up (not in this PR, keep it phase-clean):** `gaia_client.py` still does not wire `gaia_timeout_seconds` into `launch_job` — `tap_socket_timeout` (already shipped) is the ready fix, matching the Euclid client.
 
 **3a. Combined-probe fit (primary channel).** Extend the DESI w(z) CPL notebook (`feat/desi-wz-fit`) into the full stack, staged:
    1. ΛCDM sanity check (existing plan).

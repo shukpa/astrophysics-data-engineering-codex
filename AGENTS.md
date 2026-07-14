@@ -132,8 +132,26 @@ black src/ scripts/ tests/
   to human review in Phase 4). Same `EUCLID_TAP_PROXY_URL` convention as the
   Gaia client behind a CONNECT proxy. Re-run `EuclidClient.discover_tables`
   after each data release before trusting table names.
-- The multi-probe constraint harness, the anomaly agent, and the GW
-  counterpart channel are the next phases — see `AGD_FORWARD_PLAN.md`.
+- **Phase 3 (constraint & lensing harness) landed:** the analysis layer
+  `src/analysis/` — strictly downstream of gold, the pipeline never imports it.
+  `constraints.py` holds published DESI DR2 / Planck 2018 / KiDS-1000 / DES Y3 /
+  DES-SN5YR values transcribed from source with arXiv provenance (no memory,
+  no narrative without a number); `cosmology.py` is the combined-probe toolkit
+  (CPL w(z), flat w0waCDM distances via astropy, growth index γ, S8, tension in
+  σ); `lensing.py` is the SIS/SIE harness (θ_E ↔ σ_v ↔ projected mass on
+  astropy angular-diameter distances, plus the 1/√N survey sensitivity floor).
+  Two runnable notebooks render the science: `notebooks/combined_probe_
+  constraints.ipynb` (3a verdict cell — where w0/wa/γ/S8 land vs GR+ΛCDM vs
+  braneworld/DGP) and `notebooks/euclid_lens_statistics.ipynb` (3b sensitivity
+  floor — Q1 and DR1 both sit orders of magnitude above braneworld-scale lensing
+  effects; the harness is a DR1-ready ΛCDM instrument, not a per-lens dimension
+  probe). Every relation is unit-tested against physics identities and the
+  transcribed values. New runtime deps: `numpy`, `scipy` (astropy distance
+  integrals); `matplotlib`/`nbformat`/`nbconvert` are dev-only (notebooks).
+  Re-run against DR1-Foundation by updating the numbers in `constraints.py` and
+  swapping N≈500 → N≈7000 — no code change.
+- The anomaly agent (Phase 4) and the GW standard-siren counterpart channel
+  (Phase 5) are the next phases — see `AGD_FORWARD_PLAN.md`.
 - No production agent runtime or provider has been selected; the platform stays
   provider-neutral by design.
 
@@ -155,6 +173,12 @@ black src/ scripts/ tests/
 - `src/processing/euclid_lens_processor.py`: SLDE lens catalogue
   bronze/silver (file-based; grade filtering)
 - `src/models/lenses.py`: EuclidLensCandidate / EuclidLensCatalog
+- `src/analysis/`: Phase 3 constraint & lensing harness (downstream of gold;
+  never imported by the pipeline) — `constraints.py` (transcribed published
+  values + provenance), `cosmology.py` (CPL/w0waCDM/growth/tension),
+  `lensing.py` (SIS/SIE + sensitivity floor)
+- `notebooks/combined_probe_constraints.ipynb` / `notebooks/euclid_lens_
+  statistics.ipynb`: the 3a verdict and 3b sensitivity-floor notebooks
 - `scripts/ingest_euclid_q1.py`: Euclid Q1 ingestion (live MER + SLDE file;
   `--skip-mer` for offline environments)
 - `scripts/run_fink_gold_smoke.py`: bronze→silver→gold smoke run
