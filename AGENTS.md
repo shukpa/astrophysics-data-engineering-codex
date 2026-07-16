@@ -150,8 +150,30 @@ black src/ scripts/ tests/
   integrals); `matplotlib`/`nbformat`/`nbconvert` are dev-only (notebooks).
   Re-run against DR1-Foundation by updating the numbers in `constraints.py` and
   swapping N≈500 → N≈7000 — no code change.
-- The anomaly agent (Phase 4) and the GW standard-siren counterpart channel
-  (Phase 5) are the next phases — see `AGD_FORWARD_PLAN.md`.
+- **Phase 4 (classification + anomaly agent) landed:** the Tier-1
+  classification-confidence framework and the warm-path anomaly agent, both
+  deterministic and LLM-free (the repo still contains zero LLM calls; the
+  `llm_runtime` placeholders in `config/default.yaml` are the only unbuilt
+  slot). `src/processing/classifier.py` (hot path) turns each gold row into a
+  `ClassifiedAlert`: Fink broker class as the v0 baseline, confidence built
+  from evidence agreement (rb/drb quality, SIMBAD/CDS consistency, the Gaia
+  stellar discriminator), alternatives when evidence contradicts the label, an
+  anomaly score = max(evidence disagreement, saturating light-curve deviation
+  from per-class baselines), and a follow-up priority. Escalation rules:
+  `lens_field_transient` / `gw_counterpart_candidate` are CRITICAL regardless
+  of score (the GW flag is picked up by duck typing the moment Phase 5 adds
+  it). `src/agents/anomaly_agent.py` (warm path only) assesses the flagged
+  subset and stamps the four mandatory rigor fields on every flag: baseline
+  comparison, deviation in sigma, trials-corrected false-alarm probability,
+  and a known-systematic exclusion checklist (bogus, moving object, stellar
+  masquerade, insufficient history, bright-star artifact). Flag-driven
+  CRITICAL always escalates; score-driven CRITICAL must still pass the rigor
+  gate. `scripts/nightly_report.py` renders counts by class/priority,
+  lens-field matches, top anomalies with their rigor fields, and the system
+  metrics section (latency, confidence, Fink-vs-SIMBAD agreement proxy,
+  FAP tracking, cross-match completeness) as Markdown + JSON + Parquet.
+- The GW standard-siren counterpart channel (Phase 5) is the next phase —
+  see `AGD_FORWARD_PLAN.md`.
 - No production agent runtime or provider has been selected; the platform stays
   provider-neutral by design.
 
@@ -179,6 +201,14 @@ black src/ scripts/ tests/
   `lensing.py` (SIS/SIE + sensitivity floor)
 - `notebooks/combined_probe_constraints.ipynb` / `notebooks/euclid_lens_
   statistics.ipynb`: the 3a verdict and 3b sensitivity-floor notebooks
+- `src/processing/classifier.py`: hot-path Tier-1 classifier (deterministic;
+  confidence, alternatives, anomaly score, priority; per-class LC baselines)
+- `src/agents/anomaly_agent.py`: warm-path anomaly agent (four rigor fields,
+  escalation rules; no LLM)
+- `src/models/classification.py`: ClassifiedAlert / AnomalyAssessment /
+  FollowUpPriority contracts
+- `scripts/nightly_report.py`: nightly report CLI (classes, lens matches,
+  top anomalies, system metrics)
 - `scripts/ingest_euclid_q1.py`: Euclid Q1 ingestion (live MER + SLDE file;
   `--skip-mer` for offline environments)
 - `scripts/run_fink_gold_smoke.py`: bronze→silver→gold smoke run

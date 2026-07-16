@@ -224,6 +224,84 @@ class EuclidSettings(BaseSettings):
     tap_ca_bundle: str | None = None
 
 
+class ClassificationSettings(BaseSettings):
+    """Configuration for the Tier-1 classification-confidence framework.
+
+    The hot-path baseline classifier (``src/processing/classifier.py``) is
+    deterministic and LLM-free (architecture rule 1). Fink's broker classes
+    are the v0 baseline; an own light-curve-feature model is the upgrade path.
+
+    Attributes:
+        high_confidence_threshold: Confidence at/above which a classification
+            is treated as secure (suppresses anomaly escalation for
+            well-explained events).
+        anomaly_score_threshold: Anomaly score at/above which an event is
+            handed to the warm-path anomaly agent.
+        high_priority_classes: Fink classes that are scientifically valuable
+            known types (follow-up priority HIGH).
+        low_priority_classes: Well-characterised known types (priority LOW,
+            archive only).
+    """
+
+    model_config = SettingsConfigDict(env_prefix="CLASSIFICATION_")
+
+    high_confidence_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    anomaly_score_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    high_priority_classes: list[str] = Field(
+        default_factory=lambda: [
+            "Kilonova candidate",
+            "Early SN Ia candidate",
+            "Microlensing candidate",
+        ]
+    )
+    low_priority_classes: list[str] = Field(
+        default_factory=lambda: [
+            "Variable Star",
+            "YSO",
+            "Solar System MPC",
+            "Solar System candidate",
+        ]
+    )
+
+
+class AnomalySettings(BaseSettings):
+    """Configuration for the warm-path anomaly agent.
+
+    Attributes:
+        outlier_sigma_threshold: Deviation (in sigma vs the class baseline)
+            at/above which an event counts as a statistical outlier.
+        minimum_detections_for_analysis: Light-curve detections required
+            before deviations are considered meaningful (single-epoch
+            "anomalies" are overwhelmingly artifacts).
+        max_false_alarm_probability: Trials-corrected false-alarm probability
+            an assessment must beat before a non-CRITICAL event escalates.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ANOMALY_")
+
+    outlier_sigma_threshold: float = Field(default=3.0, ge=0.0)
+    minimum_detections_for_analysis: int = Field(default=5, ge=1)
+    max_false_alarm_probability: float = Field(default=0.01, gt=0.0, le=1.0)
+
+
+class ReportSettings(BaseSettings):
+    """Configuration for the nightly report CLI.
+
+    Attributes:
+        include_top_n_events: How many top anomalies to include.
+        minimum_priority: Lowest follow-up priority included in the
+            notification-worthy section of the report.
+        output_path: Directory for generated reports
+            (relative to StorageSettings.base_path).
+    """
+
+    model_config = SettingsConfigDict(env_prefix="REPORT_")
+
+    include_top_n_events: int = Field(default=20, ge=1, le=1000)
+    minimum_priority: str = "HIGH"
+    output_path: str = "reports"
+
+
 class LoggingSettings(BaseSettings):
     """Configuration for structured logging.
 
@@ -257,6 +335,9 @@ class Settings(BaseSettings):
         processing: Processing pipeline configuration.
         crossmatch: Catalog cross-match configuration (gold layer).
         euclid: Euclid open-data ingestion configuration.
+        classification: Tier-1 classification framework configuration.
+        anomaly: Warm-path anomaly agent configuration.
+        report: Nightly report configuration.
         logging: Logging configuration.
     """
 
@@ -277,6 +358,9 @@ class Settings(BaseSettings):
     processing: ProcessingSettings = Field(default_factory=ProcessingSettings)
     crossmatch: CrossmatchSettings = Field(default_factory=CrossmatchSettings)
     euclid: EuclidSettings = Field(default_factory=EuclidSettings)
+    classification: ClassificationSettings = Field(default_factory=ClassificationSettings)
+    anomaly: AnomalySettings = Field(default_factory=AnomalySettings)
+    report: ReportSettings = Field(default_factory=ReportSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     @model_validator(mode="after")
