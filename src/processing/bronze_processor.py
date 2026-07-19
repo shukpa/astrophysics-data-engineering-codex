@@ -171,7 +171,7 @@ class BronzeProcessor:
                 alert=ztf_alert,
                 source=source,
                 source_version=source_version,
-                raw_payload=raw_alert,
+                raw_payload=raw_alert.get("_fink_raw_payload", raw_alert),
                 processing_id=processing_id,
             )
 
@@ -370,7 +370,7 @@ class BronzeProcessor:
                 if observation_date and "observation_date" in df.columns:
                     df = df[df["observation_date"] == observation_date]
 
-            if limit:
+            if limit is not None:
                 df = df.head(limit)
 
             return df

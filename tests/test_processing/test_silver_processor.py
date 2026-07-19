@@ -141,6 +141,104 @@ class TestSilverProcessor:
         assert len(df) == 1
         assert df.iloc[0]["object_id"] == "ZTF26write"
 
+    def test_replayed_candidate_is_idempotent_and_keeps_best_score(
+        self, processor: SilverProcessor
+    ) -> None:
+        first = processor.process_batch(
+            create_batch([create_bronze_alert(object_id="ZTF26first", candid=44, drb=0.5)]),
+            batch_id="silver_first",
+        )
+        second = processor.process_batch(
+            create_batch([create_bronze_alert(object_id="ZTF26best", candid=44, drb=0.99)]),
+            batch_id="silver_second",
+        )
+
+        processor.write_batch(first)
+        processor.write_batch(second)
+        result = processor.read_silver_data()
+
+        assert len(result) == 1
+        assert result.iloc[0]["object_id"] == "ZTF26best"
+        assert result.iloc[0]["drb_score"] == pytest.approx(0.99)
+
+    def test_replayed_fallback_key_is_idempotent(self, processor: SilverProcessor) -> None:
+        alert = create_bronze_alert(object_id="ZTF26fallback", candid=None)
+        first = processor.process_batch(create_batch([alert]), batch_id="silver_first")
+        second = processor.process_batch(create_batch([alert]), batch_id="silver_second")
+
+        processor.write_batch(first)
+        processor.write_batch(second)
+
+        assert len(processor.read_silver_data()) == 1
+
+    def test_nullable_candidate_merge_preserves_large_ztf_ids(
+        self, processor: SilverProcessor
+    ) -> None:
+        candidate_id = 3396516274715015009
+        first = processor.process_batch(
+            create_batch(
+                [create_bronze_alert(object_id="ZTF26exact", candid=candidate_id, drb=0.5)]
+            ),
+            batch_id="silver_first",
+        )
+        fallback = processor.process_batch(
+            create_batch([create_bronze_alert(object_id="ZTF26fallback", candid=None)]),
+            batch_id="silver_fallback",
+        )
+        replay = processor.process_batch(
+            create_batch(
+                [create_bronze_alert(object_id="ZTF26exact", candid=candidate_id, drb=0.99)]
+            ),
+            batch_id="silver_replay",
+        )
+
+        processor.write_batch(first)
+        processor.write_batch(fallback)
+        merged = processor.read_silver_data()
+        exact = merged.loc[merged["object_id"] == "ZTF26exact"].iloc[0]
+
+        assert str(merged["candidate_id"].dtype) == "Int64"
+        assert str(merged["source_candidate_id"].dtype) == "Int64"
+        assert int(exact["candidate_id"]) == candidate_id
+        assert int(exact["source_candidate_id"]) == candidate_id
+
+        processor.write_batch(replay)
+        result = processor.read_silver_data()
+        exact = result.loc[result["object_id"] == "ZTF26exact"].iloc[0]
+
+        assert len(result) == 2
+        assert int(exact["candidate_id"]) == candidate_id
+        assert int(exact["source_candidate_id"]) == candidate_id
+        assert exact["drb_score"] == pytest.approx(0.99)
+
+    def test_replayed_candidate_is_idempotent_for_json(self, tmp_path: Path) -> None:
+        processor = SilverProcessor(
+            storage_settings=StorageSettings(base_path=tmp_path, file_format="json")
+        )
+        alert = create_bronze_alert(object_id="ZTF26json", candid=45)
+        first = processor.process_batch(create_batch([alert]), batch_id="silver_first")
+        second = processor.process_batch(create_batch([alert]), batch_id="silver_second")
+
+        processor.write_batch(first)
+        processor.write_batch(second)
+
+        assert len(processor.read_silver_data()) == 1
+
+    def test_previous_detection_count_excludes_upper_limits(
+        self, processor: SilverProcessor
+    ) -> None:
+        alert = create_bronze_alert(
+            prv_candidates=[
+                {"jd": 2461150.0, "fid": 1, "magpsf": 19.0},
+                {"jd": 2461149.0, "fid": 1, "magpsf": None},
+                {"not": "a detection"},
+            ]
+        )
+
+        silver = processor.process_batch(create_batch([alert]))
+
+        assert silver.alerts[0].num_previous_detections == 1
+
     def test_get_statistics(self, processor: SilverProcessor) -> None:
         silver = processor.process_batch(
             create_batch(

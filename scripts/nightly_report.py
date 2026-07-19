@@ -72,6 +72,9 @@ def load_gold_alerts(
     alerts: list[GoldAlert] = []
     for record in df.to_dict("records"):
         cleaned = {key: none_if_nan(value) for key, value in record.items()}
+        per_filter_json = cleaned.pop("lc_per_filter_json", None)
+        if per_filter_json:
+            cleaned["lc_per_filter"] = json.loads(per_filter_json)
         alerts.append(GoldAlert(**cleaned))
     return alerts
 

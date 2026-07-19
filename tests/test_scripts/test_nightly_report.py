@@ -45,6 +45,34 @@ def test_load_gold_alerts_cleans_parquet_nans(tmp_path: Path) -> None:
     assert reloaded["ZTF26clean01"].candidate_id == 123456789
 
 
+def test_load_gold_alerts_round_trips_per_filter_features(tmp_path: Path) -> None:
+    band = {
+        "filter_id": 1,
+        "filter_name": "g",
+        "n_detections": 2,
+        "time_span_days": 1.0,
+        "mag_brightest": 18.5,
+        "mag_faintest": 18.8,
+        "mag_mean": 18.65,
+        "mag_weighted_mean": 18.65,
+        "mean_sigmapsf": 0.05,
+        "amplitude": 0.3,
+        "amplitude_uncertainty": 0.07,
+        "median_cadence_days": 1.0,
+        "mag_rate_per_day": -0.3,
+        "mag_rate_uncertainty": 0.07,
+    }
+    gold_file = write_gold_parquet(
+        [make_gold(object_id="ZTF26bands", lc_per_filter={"g": band})],
+        tmp_path / "gold" / "batch.parquet",
+    )
+
+    loaded = load_gold_alerts(gold_file)
+
+    assert loaded[0].lc_per_filter["g"].n_detections == 2
+    assert loaded[0].lc_per_filter["g"].mag_rate_uncertainty == pytest.approx(0.07)
+
+
 def test_report_rejects_unscoped_multi_night_gold_root(tmp_path: Path) -> None:
     gold_root = tmp_path / "gold"
     write_gold_parquet(

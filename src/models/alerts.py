@@ -10,6 +10,7 @@ Key astronomical measures:
 - RA/Dec: Celestial coordinates in degrees
 """
 
+import json
 from datetime import UTC, datetime
 from enum import Enum, StrEnum
 from typing import Any
@@ -53,7 +54,11 @@ class FinkClassification(StrEnum):
     MICROLENSING = "Microlensing candidate"
     SOLAR_SYSTEM = "Solar System MPC"
     VARIABLE_STAR = "Variable Star"
+    CATACLYSMIC_VARIABLE = "Cataclysmic Variable"
     AGN = "AGN"
+    QSO = "QSO"
+    YSO = "YSO"
+    SOLAR_SYSTEM_CANDIDATE = "Solar System candidate"
     UNKNOWN = "Unknown"
 
     @classmethod
@@ -260,8 +265,6 @@ class BronzeAlert(BaseModel):
         Flattens nested alert data for efficient columnar storage while
         preserving the full payload in a JSON column.
         """
-        import json
-
         flat = {
             # Identifiers
             "object_id": self.alert.objectId,
@@ -291,9 +294,17 @@ class BronzeAlert(BaseModel):
             "source_version": self.source_version,
             "processing_id": self.processing_id,
             # Full payload for audit
-            "raw_payload_json": json.dumps(self.raw_payload) if self.raw_payload else None,
+            "raw_payload_json": (
+                json.dumps(self.raw_payload, sort_keys=True, default=str)
+                if self.raw_payload
+                else None
+            ),
             # Light curve summary
-            "num_previous_detections": len(self.alert.prv_candidates or []),
+            "num_previous_detections": sum(
+                1
+                for candidate in self.alert.prv_candidates or []
+                if candidate.get("magpsf") is not None
+            ),
         }
         return flat
 
@@ -393,6 +404,27 @@ class SilverBatch(BaseModel):
         return list({alert.object_id for alert in self.alerts})
 
 
+class LightCurveBandFeatures(BaseModel):
+    """Uncertainty- and cadence-aware light-curve features for one filter."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filter_id: int = Field(..., ge=1, le=3)
+    filter_name: str
+    n_detections: int = Field(..., ge=1)
+    time_span_days: float = Field(..., ge=0)
+    mag_brightest: float
+    mag_faintest: float
+    mag_mean: float
+    mag_weighted_mean: float
+    mean_sigmapsf: float | None = Field(None, ge=0)
+    amplitude: float = Field(..., ge=0)
+    amplitude_uncertainty: float | None = Field(None, ge=0)
+    median_cadence_days: float | None = Field(None, ge=0)
+    mag_rate_per_day: float | None = None
+    mag_rate_uncertainty: float | None = Field(None, ge=0)
+
+
 class GoldAlert(BaseModel):
     """Enriched, analysis-ready alert record for the gold layer.
 
@@ -461,6 +493,7 @@ class GoldAlert(BaseModel):
     lc_mag_std: float | None = Field(None, ge=0)
     lc_amplitude: float | None = Field(None, ge=0)
     lc_mag_rate_per_day: float | None = None
+    lc_per_filter: dict[str, LightCurveBandFeatures] = Field(default_factory=dict)
 
     # Provenance pointers (no raw payload JSON in gold)
     source: str
@@ -477,7 +510,9 @@ class GoldAlert(BaseModel):
 
     def to_flat_dict(self) -> dict[str, Any]:
         """Convert to a flat dictionary for Parquet/Delta-compatible storage."""
-        return self.model_dump(mode="json")
+        flat = self.model_dump(mode="json")
+        flat["lc_per_filter_json"] = json.dumps(flat.pop("lc_per_filter"), sort_keys=True)
+        return flat
 
 
 class GoldBatch(BaseModel):

@@ -111,6 +111,37 @@ class TestClassify:
         )
         assert messy.anomaly_score > clean.anomaly_score
 
+    def test_per_filter_features_prevent_color_from_looking_like_variability(self) -> None:
+        band = {
+            "filter_id": 1,
+            "filter_name": "g",
+            "n_detections": 2,
+            "time_span_days": 2.0,
+            "mag_brightest": 19.0,
+            "mag_faintest": 19.0,
+            "mag_mean": 19.0,
+            "mag_weighted_mean": 19.0,
+            "mean_sigmapsf": 0.05,
+            "amplitude": 0.0,
+            "amplitude_uncertainty": 0.07,
+            "median_cadence_days": 2.0,
+            "mag_rate_per_day": 0.0,
+            "mag_rate_uncertainty": 0.04,
+        }
+        alert = make_gold(
+            lc_amplitude=2.0,
+            lc_mag_rate_per_day=2.0,
+            lc_per_filter={
+                "g": band,
+                "r": {**band, "filter_id": 2, "filter_name": "r", "mag_mean": 17.0},
+            },
+        )
+
+        result = BaselineClassifier().classify(alert)
+
+        assert result.anomaly_score < 0.7
+        assert result.follow_up_priority is not FollowUpPriority.CRITICAL
+
 
 class TestPriority:
     def test_lens_field_transient_is_critical_regardless(self) -> None:

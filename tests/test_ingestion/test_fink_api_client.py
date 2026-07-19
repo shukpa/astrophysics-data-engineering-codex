@@ -15,12 +15,14 @@ import pytest
 import requests
 import responses
 
+from src.exceptions import FinkAPIError
 from src.ingestion.fink_api_client import (
     FinkAPIClient,
     FinkAPIConfig,
     FinkClass,
     canonicalize_fink_alert_record,
 )
+from src.utils.config import clear_settings_cache
 
 # =============================================================================
 # Fixtures
@@ -30,7 +32,7 @@ from src.ingestion.fink_api_client import (
 @pytest.fixture
 def client() -> FinkAPIClient:
     """Create a FinkAPIClient with default configuration."""
-    return FinkAPIClient()
+    return FinkAPIClient(FinkAPIConfig(max_retries=0, retry_backoff_factor=0))
 
 
 @pytest.fixture
@@ -83,6 +85,7 @@ class TestFinkAPIClientUnit:
             "i:jd": 2461151.01,
             "i:rb": 0.92,
             "i:drb": 0.99,
+            "i:prv_candidates": [{"jd": 2461150.0, "fid": 1, "magpsf": 19.0}],
             "v:classification": "SN candidate",
             "d:cdsxmatch": "Unknown",
         }
@@ -99,6 +102,7 @@ class TestFinkAPIClientUnit:
         assert canonical["jd"] == 2461151.01
         assert canonical["rb"] == 0.92
         assert canonical["drb"] == 0.99
+        assert canonical["prv_candidates"] == raw["i:prv_candidates"]
         assert canonical["v:fink_class"] == "SN candidate"
         assert canonical["_fink_raw_payload"] == raw
 
@@ -125,7 +129,7 @@ class TestFinkAPIClientUnit:
     def test_config_defaults(self) -> None:
         """Default configuration should use Fink's public API."""
         config = FinkAPIConfig()
-        assert config.base_url == "https://api.fink-portal.org"
+        assert config.base_url == "https://api.ztf.fink-portal.org"
         assert config.api_version == "v1"
         assert config.timeout_seconds == 30
 
@@ -141,7 +145,7 @@ class TestFinkAPIClientUnit:
     def test_endpoint_construction(self, client: FinkAPIClient) -> None:
         """Endpoint URL should be correctly constructed."""
         url = client._endpoint("objects")
-        assert url == "https://api.fink-portal.org/api/v1/objects"
+        assert url == "https://api.ztf.fink-portal.org/api/v1/objects"
 
     @responses.activate
     def test_get_object_success(
@@ -152,7 +156,7 @@ class TestFinkAPIClientUnit:
         """Successfully retrieve alerts for a known object."""
         responses.add(
             responses.POST,
-            "https://api.fink-portal.org/api/v1/objects",
+            "https://api.ztf.fink-portal.org/api/v1/objects",
             json=sample_alert_json,
             status=200,
         )
@@ -168,7 +172,7 @@ class TestFinkAPIClientUnit:
         """Empty response should return empty DataFrame."""
         responses.add(
             responses.POST,
-            "https://api.fink-portal.org/api/v1/objects",
+            "https://api.ztf.fink-portal.org/api/v1/objects",
             body=b"",
             status=200,
         )
@@ -186,7 +190,7 @@ class TestFinkAPIClientUnit:
         """Retrieve latest alerts for a specific classification."""
         responses.add(
             responses.POST,
-            "https://api.fink-portal.org/api/v1/latests",
+            "https://api.ztf.fink-portal.org/api/v1/latests",
             json=sample_alert_json,
             status=200,
         )
@@ -200,7 +204,7 @@ class TestFinkAPIClientUnit:
         """Latest alert records should be canonicalized for Bronze."""
         responses.add(
             responses.POST,
-            "https://api.fink-portal.org/api/v1/latests",
+            "https://api.ztf.fink-portal.org/api/v1/latests",
             json=[
                 {
                     "i:objectId": "ZTF26abc",
@@ -233,7 +237,7 @@ class TestFinkAPIClientUnit:
         """Cone search should return alerts within radius."""
         responses.add(
             responses.POST,
-            "https://api.fink-portal.org/api/v1/explorer",
+            "https://api.ztf.fink-portal.org/api/v1/conesearch",
             json=sample_alert_json,
             status=200,
         )
@@ -247,7 +251,7 @@ class TestFinkAPIClientUnit:
         """HTTP errors should be raised after retries exhausted."""
         responses.add(
             responses.POST,
-            "https://api.fink-portal.org/api/v1/objects",
+            "https://api.ztf.fink-portal.org/api/v1/objects",
             status=500,
         )
 
@@ -263,7 +267,7 @@ class TestFinkAPIClientUnit:
         """Column filtering should be passed in the request."""
         responses.add(
             responses.POST,
-            "https://api.fink-portal.org/api/v1/objects",
+            "https://api.ztf.fink-portal.org/api/v1/objects",
             json=sample_alert_json,
             status=200,
         )
@@ -281,6 +285,56 @@ class TestFinkAPIClientUnit:
         assert FinkClass.EARLY_SN_IA.value == "Early SN Ia candidate"
         assert FinkClass.KILONOVA.value == "Kilonova candidate"
         assert FinkClass.UNKNOWN.value == "Unknown"
+
+    def test_default_client_uses_runtime_fink_settings(self, monkeypatch) -> None:
+        monkeypatch.setenv("FINK_BASE_URL", "https://fink.example.test")
+        monkeypatch.setenv("FINK_TIMEOUT_SECONDS", "17")
+        monkeypatch.setenv("FINK_MAX_RETRIES", "1")
+        clear_settings_cache()
+
+        configured = FinkAPIClient()
+
+        assert configured.config.base_url == "https://fink.example.test"
+        assert configured.config.timeout_seconds == 17
+        assert configured.config.max_retries == 1
+        clear_settings_cache()
+
+    @responses.activate
+    def test_malformed_json_fails_visibly(self, client: FinkAPIClient) -> None:
+        responses.add(
+            responses.POST,
+            "https://api.ztf.fink-portal.org/api/v1/objects",
+            body="not-json{{{",
+            status=200,
+        )
+
+        with pytest.raises(FinkAPIError, match="Malformed JSON response"):
+            client.get_object("ZTF21aaxtctv")
+
+    @responses.activate
+    def test_transient_http_error_is_retried(self, sample_alert_json: list[dict]) -> None:
+        configured = FinkAPIClient(FinkAPIConfig(max_retries=1, retry_backoff_factor=0))
+        endpoint = "https://api.ztf.fink-portal.org/api/v1/objects"
+        responses.add(responses.POST, endpoint, status=503)
+        responses.add(responses.POST, endpoint, json=sample_alert_json, status=200)
+
+        result = configured.get_object("ZTF21aaxtctv")
+
+        assert len(result) == 2
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_permanent_http_error_is_not_retried(self) -> None:
+        configured = FinkAPIClient(FinkAPIConfig(max_retries=3, retry_backoff_factor=0))
+        responses.add(
+            responses.POST,
+            "https://api.ztf.fink-portal.org/api/v1/objects",
+            status=400,
+        )
+
+        with pytest.raises(requests.HTTPError):
+            configured.get_object("ZTF21aaxtctv")
+        assert len(responses.calls) == 1
 
 
 # =============================================================================
