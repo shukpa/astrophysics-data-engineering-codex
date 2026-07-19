@@ -28,7 +28,7 @@ Cloned HEAD, reviewed all 4 commits, read the new silver processor and smoke scr
 - Architecture rules held: no LLM in hot path, medallion layers not skipped, provenance preserved, provider-neutral.
 
 ### Issues found (ordered by priority)
-1. **Multi-agent drift risk is unmitigated by automation.** The de-Clauding (removal of `CLAUDE.md`/`CLAUDE_CODE_CONTEXT.md` in favour of neutral `AGENTS.md`) is deliberate and stays. But with multiple toolchains committing, the only drift protections are conventions in `AGENTS.md` — nothing mechanical enforces test/lint/style parity across agents. CI (item 2) and committing this plan file to the repo are the mitigations; each agent must be pointed at `AGENTS.md` + the plan at session start.
+1. **Multi-agent drift risk is unmitigated by automation.** The removal of provider-specific context files in favour of the neutral `AGENTS.md` is deliberate and stays. But with multiple toolchains committing, the only drift protections are conventions in `AGENTS.md` — nothing mechanical enforces test/lint/style parity across agents. CI (item 2) and committing this plan file to the repo are the mitigations; each agent must be pointed at `AGENTS.md` + the plan at session start.
 2. **No CI.** No `.github/workflows/`. Tests pass locally but nothing enforces it on push/PR — especially important with multiple agent toolchains committing here.
 3. **`config/default.yaml` is not loaded at runtime** (acknowledged in AGENTS.md as a "planning artifact"). Two sources of truth: Pydantic defaults in `src/utils/config.py` vs the YAML. The silver rejection filters are currently duplicated in both.
 4. **`datetime.utcnow()`** used in processors — deprecated in Python 3.12. Trivial fix (`datetime.now(timezone.utc)`).
