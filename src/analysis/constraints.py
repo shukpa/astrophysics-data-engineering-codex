@@ -11,7 +11,7 @@ asymmetric; symmetric errors set ``err_lo == err_hi``.
 
 Sources
 -------
-* DESI DR2 BAO (w0waCDM): arXiv:2503.14738, Table 3.
+* DESI DR2 BAO (w0waCDM): arXiv:2503.14738, Tables 5 and 6.
 * Planck 2018 base-LCDM (TT,TE,EE+lowE+lensing): arXiv:1807.06209, Table 2.
 * KiDS-1000 3x2pt: arXiv:2007.15632, abstract.
 * DES Y3 3x2pt: arXiv:2105.13549, abstract.
@@ -82,11 +82,11 @@ class W0WaConstraint:
     omega_m: Measurement
     h0: Measurement
     sigma_vs_lcdm: float
-    source: str = "DESI DR2 BAO, Table 3"
+    source: str = "DESI DR2 BAO, Tables 5 and 6"
     arxiv: str = "2503.14738"
 
 
-# --- DESI DR2 w0waCDM (arXiv:2503.14738, Table 3) -----------------------------
+# --- DESI DR2 w0waCDM (arXiv:2503.14738, Tables 5 and 6) ----------------------
 # The headline dynamical-dark-energy result. Favoured quadrant is w0 > -1,
 # wa < 0. Preference over LCDM grows as SNe are added (2.8-4.2 sigma).
 DESI_DR2_W0WA: dict[str, W0WaConstraint] = {
@@ -154,8 +154,8 @@ class GrowthConstraint:
 
 
 # --- Stage-III weak lensing (the growth axis, pre-Euclid-DR1) ------------------
-# These separate modified gravity from LCDM *today*. Both sit low relative to
-# Planck's S8 = 0.832 — the "S8 tension".
+# Marginal S8 offsets relative to Planck. Full-parameter-space consistency
+# requires the corresponding covariance matrices or likelihoods.
 STAGE3_GROWTH: dict[str, GrowthConstraint] = {
     "KiDS-1000": GrowthConstraint(
         label="KiDS-1000 3x2pt",
@@ -187,5 +187,5 @@ DES_SN5YR_ARXIV = "2401.02929"
 # markedly larger value. These are the "vs GR vs braneworld" goalposts the 3a
 # verdict cell compares against — they are *model predictions*, not data.
 GAMMA_GR = 0.55  # Linder 2005; Omega_m(z)^gamma growth-rate approximation.
-GAMMA_DGP = 0.68  # Self-accelerating DGP (flat-sky), ruled out by data.
+GAMMA_DGP = 0.68  # Self-accelerating DGP reference; no gamma fit is performed here.
 GAMMA_SOURCES = "Linder 2005 (astro-ph/0507263); Linder & Cahn 2007 for DGP"

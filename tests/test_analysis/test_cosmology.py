@@ -108,6 +108,7 @@ class TestConstraintsData:
         }
         for rec in C.DESI_DR2_W0WA.values():
             assert rec.arxiv == "2503.14738"
+            assert "Tables 5 and 6" in rec.source
 
     def test_desi_lcdm_offset_of_w0_from_minus_one(self) -> None:
         # w0 = -0.752 is ~4.3 sigma above -1 on its own error bar (sanity).

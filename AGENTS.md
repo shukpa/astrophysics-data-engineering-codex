@@ -149,7 +149,7 @@ black src/ scripts/ tests/
   integrals); `matplotlib`/`nbformat`/`nbconvert` are dev-only (notebooks).
   Re-run against DR1-Foundation by updating the numbers in `constraints.py` and
   swapping N≈500 → N≈7000 — no code change.
-- **Phase 4 (classification + anomaly agent) implemented; PR #8 pending merge:** the Tier-1
+- **Phase 4 (classification + anomaly agent) synced internally; public PR #8 remains the upstream handoff:** the Tier-1
   classification-confidence framework and the warm-path anomaly agent, both
   deterministic and LLM-free (the repo still contains zero LLM calls; the
   `llm_runtime` placeholders in `config/default.yaml` are the only unbuilt
@@ -173,6 +173,19 @@ black src/ scripts/ tests/
   lens-field matches, top anomalies with their rigor fields, and the system
   metrics section (latency, confidence, Fink-vs-SIMBAD agreement proxy,
   FAP tracking, cross-match completeness) as Markdown + JSON + Parquet.
+- **Reliability/calibration checkpoint:** the default Fink endpoint is
+  `https://api.ztf.fink-portal.org`; timeout/retry/backoff settings are wired
+  into the client and malformed JSON fails visibly. Local storage is Parquet or
+  JSON; Delta is explicitly rejected until implemented. Silver writes are
+  replay-idempotent on candidate ID (with object/JD/filter fallback). Gold now
+  computes per-filter light-curve features with photometric uncertainties and
+  cadence so alternating bands are not mistaken for time variability.
+  `src/analysis/calibration.py` and `scripts/run_fink_calibration_replay.py`
+  provide bounded, object-disjoint temporal replay against independently
+  labelled BTS/Fink alerts and report accuracy, false positives, and missed
+  review targets (100-alert default, 1,000-alert total hard cap). Anomaly
+  scores and FAP remain routing heuristics until
+  empirically calibrated; never present them as discovery significance.
 - The GW standard-siren counterpart channel (Phase 5) is the next phase —
   see `AGD_FORWARD_PLAN.md`.
 - No production agent runtime or provider has been selected; the platform stays
@@ -199,7 +212,8 @@ black src/ scripts/ tests/
 - `src/analysis/`: Phase 3 constraint & lensing harness (downstream of gold;
   never imported by the pipeline) — `constraints.py` (transcribed published
   values + provenance), `cosmology.py` (CPL/w0waCDM/growth/tension),
-  `lensing.py` (SIS/SIE + sensitivity floor)
+  `lensing.py` (SIS/SIE + sensitivity floor), `calibration.py` (labelled
+  temporal replay metrics)
 - `notebooks/combined_probe_constraints.ipynb` / `notebooks/euclid_lens_
   statistics.ipynb`: the 3a verdict and 3b sensitivity-floor notebooks
 - `src/processing/classifier.py`: hot-path Tier-1 classifier (deterministic;
@@ -215,6 +229,8 @@ black src/ scripts/ tests/
 - `scripts/run_fink_gold_smoke.py`: bronze→silver→gold smoke run
   (`--source synthetic --no-crossmatch` for offline environments;
   `--lens-catalog` to exercise the lens-field cross-match)
+- `scripts/run_fink_calibration_replay.py`: bounded BTS/Fink replay with
+  temporal split, object-leakage rejection, and calibration diagnostics
 - `src/utils/config.py`: runtime settings and environment-variable contract
 - `config/default.yaml`: non-loaded planning config for future phases
 - `tests/conftest.py`: shared test fixtures

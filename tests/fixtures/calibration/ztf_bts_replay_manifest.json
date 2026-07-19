@@ -1,0 +1,17 @@
+{
+  "name": "ZTF Bright Transient Survey bounded replay manifest",
+  "source_url": "https://sites.astro.caltech.edu/ztf/bts/explorer.php",
+  "citation": "Perley et al. 2020, The Zwicky Transient Facility Bright Transient Survey II, arXiv:2009.01242",
+  "label_note": "truth_is_rare identifies spectroscopically labelled review targets (for routing diagnostics), not evidence of a physical anomaly.",
+  "objects": [
+    {"object_id": "ZTF17aaazdba", "tns_id": "AT2019azh", "truth_class": "TDE", "truth_is_rare": true, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF19aaadwfi", "tns_id": "SN2018lnb", "truth_class": "SLSN-II", "truth_is_rare": true, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF20accmtgu", "tns_id": "SN2020vfv", "truth_class": "SN IIP", "truth_is_rare": false, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF20aakyqlh", "tns_id": "SN2017bde", "truth_class": "SN Ia", "truth_is_rare": false, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF21acipofv", "tns_id": "SN2017baq", "truth_class": "SN Ia", "truth_is_rare": false, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF21acolmss", "tns_id": "SN2021aefl", "truth_class": "SN Ia", "truth_is_rare": false, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF21abhtlrj", "tns_id": "SN2021rde", "truth_class": "SN Ia", "truth_is_rare": false, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF17aabtvsy", "tns_id": "SN2022yei", "truth_class": "SN Ia", "truth_is_rare": false, "label_source": "ZTF BTS Sample Explorer"},
+    {"object_id": "ZTF17aaapufz", "tns_id": "AT2016blu", "truth_class": "LBV", "truth_is_rare": true, "label_source": "ZTF BTS Sample Explorer"}
+  ]
+}

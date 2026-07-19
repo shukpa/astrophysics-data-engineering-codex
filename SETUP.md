@@ -5,7 +5,7 @@
 - Python 3.11+
 - Git
 - (Optional) Databricks CLI — for deploying to Databricks workspace
-- (Optional) Docker — for local Kafka testing in Phase 2
+- (Optional) Docker — for future local Kafka testing
 
 ## Local Development Setup
 
@@ -34,7 +34,7 @@ touch .env
 
 Optional environment variables:
 ```bash
-# Optional: Fink livestream credentials (Phase 2)
+# Optional: Fink livestream credentials for future Kafka ingestion
 FINK_USERNAME=
 FINK_GROUP_ID=
 FINK_SERVERS=
@@ -44,7 +44,7 @@ DATABRICKS_HOST=
 DATABRICKS_TOKEN=
 ```
 
-The Fink REST API requires **no authentication** for Phase 1. You can start immediately.
+The public ZTF/Fink REST API (`https://api.ztf.fink-portal.org`) requires **no authentication**. You can start immediately.
 
 `src/utils/config.py` is the runtime configuration source of truth. `config/default.yaml` is currently a planning artifact and is not loaded automatically.
 
@@ -58,15 +58,35 @@ pytest tests/ -v
 ruff check src/ tests/
 ```
 
-### 4. Download Sample Data
+### 4. Run an Offline Smoke Test
 
 For offline development and testing:
 
 ```bash
-python scripts/download_sample_data.py
+PYTHONPATH=. python scripts/run_fink_gold_smoke.py \
+  --source synthetic --no-crossmatch --storage-base /tmp/agd-smoke
 ```
 
-This downloads a curated set of alert data to `data/sample_alerts/`.
+This exercises the bounded bronze -> silver -> gold path without external services.
+
+### 5. Run the Labelled Calibration Replay
+
+The bundled BTS manifest contains independently labelled ZTF objects. Fetch their
+bounded Fink histories, split them temporally, and report classification and
+routing diagnostics:
+
+```bash
+PYTHONPATH=. python scripts/run_fink_calibration_replay.py \
+  --manifest tests/fixtures/calibration/ztf_bts_replay_manifest.json \
+  --split-date 2021-01-01 --max-objects 20 --max-alerts 100 \
+  --max-alerts-per-object 100 \
+  --no-crossmatch
+```
+
+This command requires Fink egress. The anomaly score and trials-corrected FAP
+remain routing heuristics until evaluated on a sufficiently large, independent
+replay set; the bundled manifest is a capability smoke, not a discovery claim.
+The default run is 100 alerts and the total-alert hard cap is 1,000.
 
 ## Databricks Workspace Setup
 
@@ -89,9 +109,11 @@ databricks configure --token
 # Deploy notebooks
 databricks workspace import_dir notebooks/ /Shared/agd/
 
-# Create cluster configuration
-databricks clusters create --json-file config/databricks_cluster.json
 ```
+
+Configure any external cluster separately. The local processors support Parquet
+and JSON only; Delta mode is explicitly rejected until a real Delta writer is
+implemented.
 
 ## Project Dependencies
 
@@ -104,18 +126,18 @@ databricks clusters create --json-file config/databricks_cluster.json
 - `pyarrow` — Parquet file handling (Delta-compatible)
 - `pyyaml` — Configuration file parsing
 
-### Agents (Phase 3)
-- No provider-specific agent runtime is installed yet
-- Future orchestration must remain outside the real-time hot path
+### Agents
+- The deterministic classifier and anomaly agent require no provider runtime
+- Future LLM orchestration must remain outside the real-time hot path
 
-### Streaming (Phase 2)
+### Streaming (future)
 - `fink-client` — Fink Kafka consumer
 - `confluent-kafka` — Kafka client library
 - `fastavro` — Fast Avro serialization
 
-### Databricks (production deployment)
-- `delta-spark` — Delta Lake (dev stubs, actual runtime on Databricks)
-- `pyspark` — Spark (dev stubs, actual runtime on Databricks)
+### Databricks (future deployment)
+- `delta-spark` — optional future Delta Lake runtime
+- `pyspark` — optional future Spark runtime
 - `mlflow` — Experiment tracking
 
 ### Development
@@ -127,7 +149,7 @@ databricks clusters create --json-file config/databricks_cluster.json
 - `great-expectations` — Data quality validation
 - `httpx` — Async HTTP client (for testing)
 
-## Fink Livestream Registration (Phase 2)
+## Fink Livestream Registration (future streaming)
 
 To receive real-time Kafka alerts from Fink:
 

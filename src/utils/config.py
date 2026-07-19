@@ -46,20 +46,16 @@ class FinkSettings(BaseSettings):
         timeout_seconds: Request timeout in seconds.
         max_retries: Maximum number of retry attempts for failed requests.
         retry_backoff_base: Base delay (seconds) for exponential backoff.
-        rate_limit_requests: Maximum requests per rate limit window.
-        rate_limit_window_seconds: Rate limit window duration in seconds.
-        default_output_format: Default output format for API responses.
+        default_output_format: API response format supported by the client.
     """
 
     model_config = SettingsConfigDict(env_prefix="FINK_")
 
-    base_url: str = "https://api.fink-portal.org"
+    base_url: str = "https://api.ztf.fink-portal.org"
     timeout_seconds: int = Field(default=30, ge=1, le=300)
     max_retries: int = Field(default=3, ge=0, le=10)
     retry_backoff_base: float = Field(default=2.0, ge=1.0, le=10.0)
-    rate_limit_requests: int = Field(default=100, ge=1)
-    rate_limit_window_seconds: int = Field(default=60, ge=1)
-    default_output_format: Literal["json", "csv", "parquet", "votable"] = "json"
+    default_output_format: Literal["json"] = "json"
 
     @field_validator("base_url")
     @classmethod
@@ -77,9 +73,8 @@ class StorageSettings(BaseSettings):
         silver_path: Path for silver layer data (relative to base_path).
         gold_path: Path for gold layer data (relative to base_path).
         checkpoint_path: Path for streaming checkpoints.
-        file_format: Default file format for local storage.
-        partition_columns: Default columns to partition by.
-        enable_delta: Whether to use Delta Lake format (requires Databricks).
+        file_format: Local storage format. Delta is explicitly unsupported.
+        enable_delta: Reserved compatibility flag; enabling it is rejected.
     """
 
     model_config = SettingsConfigDict(env_prefix="STORAGE_")
@@ -92,8 +87,17 @@ class StorageSettings(BaseSettings):
     euclid_silver_path: str = "silver/euclid"
     checkpoint_path: str = "checkpoints"
     file_format: Literal["parquet", "delta", "json"] = "parquet"
-    partition_columns: list[str] = Field(default_factory=lambda: ["observation_date"])
     enable_delta: bool = False
+
+    @model_validator(mode="after")
+    def reject_unsupported_delta(self) -> "StorageSettings":
+        """Reject Delta configuration until a real Delta writer is implemented."""
+        if self.file_format == "delta" or self.enable_delta:
+            raise ValueError(
+                "Delta storage is not implemented by the local processors; "
+                "use file_format='parquet' and enable_delta=False."
+            )
+        return self
 
     @property
     def bronze_full_path(self) -> Path:
@@ -134,8 +138,6 @@ class ProcessingSettings(BaseSettings):
         max_alerts_per_request: Maximum alerts to fetch in a single API request.
         enable_image_processing: Whether to process image cutouts.
         schema_validation_mode: How to handle schema validation failures.
-        deduplication_window_hours: Time window for deduplication (in hours).
-        min_detection_significance: Minimum SNR for valid detections.
     """
 
     model_config = SettingsConfigDict(env_prefix="PROCESSING_")
@@ -144,8 +146,6 @@ class ProcessingSettings(BaseSettings):
     max_alerts_per_request: int = Field(default=100, ge=1, le=10000)
     enable_image_processing: bool = False
     schema_validation_mode: Literal["strict", "warn", "ignore"] = "strict"
-    deduplication_window_hours: int = Field(default=24, ge=1)
-    min_detection_significance: float = Field(default=5.0, ge=0.0)
 
 
 class CrossmatchSettings(BaseSettings):

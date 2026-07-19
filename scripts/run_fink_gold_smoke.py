@@ -5,7 +5,7 @@ Gaia DR3 + SIMBAD:
 
     python scripts/run_fink_gold_smoke.py --limit 25
 
-For offline environments (no egress to api.fink-portal.org /
+For offline environments (no egress to api.ztf.fink-portal.org /
 gea.esac.esa.int / simbad.cds.unistra.fr) a synthetic source exercises the
 full medallion plumbing without any network access:
 

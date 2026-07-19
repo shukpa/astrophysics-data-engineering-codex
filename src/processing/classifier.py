@@ -112,6 +112,25 @@ def feature_deviation_sigma(alert: GoldAlert, baseline: ClassBaseline) -> tuple[
     deviations: list[float] = []
     notes: list[str] = []
 
+    if alert.lc_per_filter:
+        for band, features in sorted(alert.lc_per_filter.items()):
+            if features.mag_rate_per_day is not None:
+                mu, sigma = baseline.rate
+                effective_sigma = math.hypot(sigma, features.mag_rate_uncertainty or 0.0)
+                z = abs(abs(features.mag_rate_per_day) - mu) / effective_sigma
+                deviations.append(z)
+                notes.append(
+                    f"{band}-band |rate| {abs(features.mag_rate_per_day):.2f} mag/day "
+                    f"({z:.1f} sigma)"
+                )
+            if features.n_detections > 1:
+                mu, sigma = baseline.amplitude
+                effective_sigma = math.hypot(sigma, features.amplitude_uncertainty or 0.0)
+                z = abs(features.amplitude - mu) / effective_sigma
+                deviations.append(z)
+                notes.append(f"{band}-band amplitude {features.amplitude:.2f} mag ({z:.1f} sigma)")
+        return (max(deviations) if deviations else 0.0, notes)
+
     if alert.lc_mag_rate_per_day is not None:
         mu, sigma = baseline.rate
         z = abs(abs(alert.lc_mag_rate_per_day) - mu) / sigma
@@ -190,6 +209,11 @@ class BaselineClassifier:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def anomaly_score_threshold(self) -> float:
+        """Return the configured score threshold for warm-path routing."""
+        return self._config.anomaly_score_threshold
 
     def classify(self, alert: GoldAlert) -> ClassifiedAlert:
         """Classify one gold alert.

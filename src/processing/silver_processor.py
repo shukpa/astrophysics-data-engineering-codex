@@ -20,6 +20,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import structlog
 
+from src.crossref.utils import none_if_nan
 from src.exceptions import SilverProcessingError, WriteError
 from src.models.alerts import AlertBatch, BronzeAlert, SilverAlert, SilverBatch
 from src.utils.config import ProcessingSettings, Settings, StorageSettings, get_settings
@@ -120,26 +121,41 @@ class SilverProcessor:
         self,
         batch: SilverBatch,
         partition_by_date: bool = True,
+        idempotent: bool = True,
     ) -> Path:
-        """Write a silver batch to storage."""
+        """Write a silver batch to storage, merging replayed candidates by default."""
         if batch.count == 0:
             self._log.warning("write_silver_batch_empty", batch_id=batch.batch_id)
             return self.output_path
 
         try:
             self.output_path.mkdir(parents=True, exist_ok=True)
-            df = pd.DataFrame([alert.to_flat_dict() for alert in batch.alerts])
+            alerts = list(batch.alerts)
+            existing_alerts: list[SilverAlert] = []
+            suffix = "*.json" if self._storage.file_format == "json" else "*.parquet"
+            if idempotent and any(self.output_path.rglob(suffix)):
+                existing_alerts = self._read_existing_alerts(alerts)
+                alerts = self._deduplicate(existing_alerts + alerts)
+            df = pd.DataFrame([alert.to_flat_dict() for alert in alerts])
 
             if self._storage.file_format == "json":
-                output_file = self._write_json(df, batch.batch_id)
+                output_file = self._write_json(df, batch.batch_id, replace_existing=idempotent)
             else:
-                output_file = self._write_parquet(df, batch.batch_id, partition_by_date)
+                if idempotent and not partition_by_date:
+                    raise ValueError("Idempotent silver writes require partition_by_date=True")
+                output_file = self._write_parquet(
+                    df,
+                    batch.batch_id,
+                    partition_by_date,
+                    replace_partitions=idempotent,
+                )
 
             self._log.info(
                 "write_silver_batch_completed",
                 batch_id=batch.batch_id,
                 output_file=str(output_file),
-                records_written=batch.count,
+                records_written=len(alerts),
+                replay_duplicates=len(existing_alerts) + batch.count - len(alerts),
             )
             return output_file
         except Exception as exc:
@@ -172,7 +188,7 @@ class SilverProcessor:
                     filters = [("observation_date", "=", observation_date)]
                 df = pd.read_parquet(self.output_path, filters=filters, engine="pyarrow")
 
-            if limit:
+            if limit is not None:
                 df = df.head(limit)
             return df
         except Exception as exc:
@@ -251,7 +267,11 @@ class SilverProcessor:
             cds_xmatch=bronze_alert.alert.d__cdsxmatch,
             rb_score=bronze_alert.alert.rb,
             drb_score=bronze_alert.alert.drb,
-            num_previous_detections=len(bronze_alert.alert.prv_candidates or []),
+            num_previous_detections=sum(
+                1
+                for candidate in bronze_alert.alert.prv_candidates or []
+                if candidate.get("magpsf") is not None
+            ),
             source=bronze_alert.source,
             source_version=bronze_alert.source_version,
             bronze_processing_id=bronze_alert.processing_id,
@@ -291,6 +311,7 @@ class SilverProcessor:
         df: pd.DataFrame,
         batch_id: str,
         partition_by_date: bool,
+        replace_partitions: bool = False,
     ) -> Path:
         if partition_by_date and "observation_date" in df.columns:
             table = pa.Table.from_pandas(df)
@@ -298,7 +319,9 @@ class SilverProcessor:
                 table,
                 root_path=str(self.output_path),
                 partition_cols=["observation_date"],
-                existing_data_behavior="overwrite_or_ignore",
+                existing_data_behavior=(
+                    "delete_matching" if replace_partitions else "overwrite_or_ignore"
+                ),
             )
             return self.output_path
 
@@ -307,11 +330,32 @@ class SilverProcessor:
         df.to_parquet(output_file, index=False, engine="pyarrow")
         return output_file
 
-    def _write_json(self, df: pd.DataFrame, batch_id: str) -> Path:
+    def _write_json(self, df: pd.DataFrame, batch_id: str, replace_existing: bool = False) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_file = self.output_path / f"silver_alerts_{batch_id}_{timestamp}.json"
         df.to_json(output_file, orient="records", indent=2)
+        if replace_existing:
+            for existing_file in self.output_path.glob("*.json"):
+                if existing_file != output_file:
+                    existing_file.unlink()
         return output_file
+
+    def _read_existing_alerts(self, alerts: list[SilverAlert]) -> list[SilverAlert]:
+        """Read only the observation dates touched by an incoming batch."""
+        if self._storage.file_format == "json":
+            existing = self.read_silver_data()
+        else:
+            frames = [
+                self.read_silver_data(observation_date=date)
+                for date in {alert.observation_date for alert in alerts}
+            ]
+            existing = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        if existing.empty:
+            return []
+        return [
+            SilverAlert(**{key: none_if_nan(value) for key, value in record.items()})
+            for record in existing.to_dict("records")
+        ]
 
     def _generate_batch_id(self) -> str:
         return f"silver_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"

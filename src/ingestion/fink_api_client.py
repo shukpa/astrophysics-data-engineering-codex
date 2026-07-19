@@ -4,7 +4,7 @@ This module provides a robust client for the Fink broker REST API,
 which serves processed ZTF (and soon Rubin/LSST) alert data.
 
 API Documentation: https://fink-broker.readthedocs.io
-API Base URL: https://api.fink-portal.org
+API Base URL: https://api.ztf.fink-portal.org
 
 No authentication is required for the REST API.
 """
@@ -14,17 +14,20 @@ from __future__ import annotations
 import io
 import logging
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 import requests
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from tenacity import (
-    retry,
-    retry_if_exception_type,
+    Retrying,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
+
+from src.exceptions import FinkAPIError
+from src.utils.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,7 @@ FINK_TO_CANONICAL_FIELDS = {
     "i:diffmaglim": "diffmaglim",
     "i:rb": "rb",
     "i:drb": "drb",
+    "i:prv_candidates": "prv_candidates",
 }
 
 
@@ -89,12 +93,21 @@ class FinkClass(StrEnum):
 class FinkAPIConfig(BaseModel):
     """Configuration for the Fink API client."""
 
-    base_url: str = "https://api.fink-portal.org"
+    base_url: str = "https://api.ztf.fink-portal.org"
     api_version: str = "v1"
-    output_format: str = "json"
-    timeout_seconds: int = 30
-    max_retries: int = 3
-    retry_backoff_factor: float = 2.0
+    output_format: Literal["json"] = "json"
+    timeout_seconds: int = Field(default=30, ge=1, le=300)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    retry_backoff_factor: float = Field(default=2.0, ge=0, le=30)
+
+
+def _is_retryable_error(exc: BaseException) -> bool:
+    """Return whether a Fink request failure is transient."""
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return exc.response.status_code in {429, 500, 502, 503, 504}
+    return False
 
 
 class FinkAPIClient:
@@ -111,7 +124,16 @@ class FinkAPIClient:
     """
 
     def __init__(self, config: FinkAPIConfig | None = None) -> None:
-        self.config = config or FinkAPIConfig()
+        if config is None:
+            settings = get_settings().fink
+            config = FinkAPIConfig(
+                base_url=settings.base_url,
+                output_format=settings.default_output_format,
+                timeout_seconds=settings.timeout_seconds,
+                max_retries=settings.max_retries,
+                retry_backoff_factor=settings.retry_backoff_base,
+            )
+        self.config = config
         self._session = requests.Session()
         self._session.headers.update({"Accept": "application/json"})
         logger.info(
@@ -123,11 +145,6 @@ class FinkAPIClient:
         """Construct full API endpoint URL."""
         return f"{self.config.base_url}/api/{self.config.api_version}/{path}"
 
-    @retry(
-        retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=1, max=30),
-    )
     def _post(self, endpoint: str, payload: dict[str, Any]) -> requests.Response:
         """Make a POST request with retry logic.
 
@@ -145,13 +162,26 @@ class FinkAPIClient:
         url = self._endpoint(endpoint)
         logger.debug("POST %s", url, extra={"payload_keys": list(payload.keys())})
 
-        response = self._session.post(
-            url,
-            json=payload,
-            timeout=self.config.timeout_seconds,
+        retrying = Retrying(
+            retry=retry_if_exception(_is_retryable_error),
+            stop=stop_after_attempt(self.config.max_retries + 1),
+            wait=wait_exponential(
+                multiplier=self.config.retry_backoff_factor,
+                min=0,
+                max=30,
+            ),
+            reraise=True,
         )
-        response.raise_for_status()
-        return response
+        for attempt in retrying:
+            with attempt:
+                response = self._session.post(
+                    url,
+                    json=payload,
+                    timeout=self.config.timeout_seconds,
+                )
+                response.raise_for_status()
+                return response
+        raise FinkAPIError("Fink request did not produce a response", endpoint=url)
 
     def _response_to_dataframe(self, response: requests.Response) -> pd.DataFrame:
         """Convert API response to a pandas DataFrame.
@@ -170,9 +200,13 @@ class FinkAPIClient:
             df = pd.read_json(io.BytesIO(response.content))
             logger.info("Retrieved %d alerts from Fink", len(df))
             return df
-        except ValueError as e:
-            logger.error("Failed to parse Fink response: %s", e)
-            return pd.DataFrame()
+        except ValueError as exc:
+            logger.error("Failed to parse Fink response: %s", exc)
+            raise FinkAPIError(
+                "Malformed JSON response from Fink API",
+                endpoint=response.url,
+                details={"output_format": self.config.output_format},
+            ) from exc
 
     def get_object(self, object_id: str, columns: list[str] | None = None) -> pd.DataFrame:
         """Retrieve all alerts for a specific ZTF object.
@@ -285,7 +319,7 @@ class FinkAPIClient:
             dec,
             radius_arcsec,
         )
-        response = self._post("explorer", payload)
+        response = self._post("conesearch", payload)
         return self._response_to_dataframe(response)
 
     def get_alerts_by_date(
@@ -337,7 +371,7 @@ class FinkAPIClient:
             # Try to fetch a single known object as a health check
             response = self._session.get(
                 self.config.base_url,
-                timeout=10,
+                timeout=self.config.timeout_seconds,
             )
             is_healthy = response.status_code == 200
             logger.info("Fink API health check: %s", "OK" if is_healthy else "FAILED")
