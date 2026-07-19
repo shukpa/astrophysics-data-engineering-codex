@@ -149,7 +149,7 @@ black src/ scripts/ tests/
   integrals); `matplotlib`/`nbformat`/`nbconvert` are dev-only (notebooks).
   Re-run against DR1-Foundation by updating the numbers in `constraints.py` and
   swapping N≈500 → N≈7000 — no code change.
-- **Phase 4 (classification + anomaly agent) synced internally; public PR #8 remains the upstream handoff:** the Tier-1
+- **Phase 4 (classification + anomaly agent) implemented on PR #8:** the Tier-1
   classification-confidence framework and the warm-path anomaly agent, both
   deterministic and LLM-free (the repo still contains zero LLM calls; the
   `llm_runtime` placeholders in `config/default.yaml` are the only unbuilt
