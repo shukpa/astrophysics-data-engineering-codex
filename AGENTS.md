@@ -3,10 +3,9 @@
 ## Project: Agentic Galactic Discovery (AGD)
 
 This file is the **single, provider-neutral operating contract for every agent**
-that works in this repo, regardless of toolchain (Claude/Fable, Codex/GPT, or
-other). It is the primary operating context. There are intentionally **no**
-provider-specific context files (e.g. no `CLAUDE.md`, no `CLAUDE_CODE_CONTEXT.md`);
-their removal was deliberate. Do not re-introduce them.
+that works in this repo, regardless of toolchain. It is the primary operating
+context. There are intentionally **no** provider-specific context files; do not
+introduce them.
 
 ## Mission
 
@@ -150,7 +149,7 @@ black src/ scripts/ tests/
   integrals); `matplotlib`/`nbformat`/`nbconvert` are dev-only (notebooks).
   Re-run against DR1-Foundation by updating the numbers in `constraints.py` and
   swapping N≈500 → N≈7000 — no code change.
-- **Phase 4 (classification + anomaly agent) landed:** the Tier-1
+- **Phase 4 (classification + anomaly agent) implemented; PR #8 pending merge:** the Tier-1
   classification-confidence framework and the warm-path anomaly agent, both
   deterministic and LLM-free (the repo still contains zero LLM calls; the
   `llm_runtime` placeholders in `config/default.yaml` are the only unbuilt
@@ -166,9 +165,11 @@ black src/ scripts/ tests/
   subset and stamps the four mandatory rigor fields on every flag: baseline
   comparison, deviation in sigma, trials-corrected false-alarm probability,
   and a known-systematic exclusion checklist (bogus, moving object, stellar
-  masquerade, insufficient history, bright-star artifact). Flag-driven
-  CRITICAL always escalates; score-driven CRITICAL must still pass the rigor
-  gate. `scripts/nightly_report.py` renders counts by class/priority,
+  masquerade, insufficient history, bright-star artifact). CRITICAL always
+  escalates; score-driven anomalies are HIGH priority, enter the warm path,
+  and must still pass the rigor gate. `scripts/nightly_report.py` accepts an
+  observation-date or gold-processing-ID selector and refuses to combine
+  multiple nights implicitly. It renders counts by class/priority,
   lens-field matches, top anomalies with their rigor fields, and the system
   metrics section (latency, confidence, Fink-vs-SIMBAD agreement proxy,
   FAP tracking, cross-match completeness) as Markdown + JSON + Parquet.

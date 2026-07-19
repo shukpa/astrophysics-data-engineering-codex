@@ -32,12 +32,10 @@ class FollowUpPriority(StrEnum):
 
     Taxonomy (from the Phase 4 planning config, now the code home):
 
-    * CRITICAL — potentially new/anomalous, or a flagged lens-field/GW
-      counterpart event; requires immediate human review. Flag-driven
-      CRITICAL (lens-field/GW) always escalates; a CRITICAL assigned purely
-      for a high anomaly score is still verified by the warm-path rigor gate.
-    * HIGH — scientifically valuable known type; spectroscopic follow-up
-      recommended.
+    * CRITICAL — a flagged lens-field/GW counterpart event; requires
+      immediate human review and always escalates.
+    * HIGH — scientifically valuable known type or a high-anomaly-score
+      event awaiting the warm-path rigor check; follow-up recommended.
     * MEDIUM — interesting but not urgent; queue for nightly review.
     * LOW — well-characterised known type; archive only.
     """

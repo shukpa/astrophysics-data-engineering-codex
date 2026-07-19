@@ -153,6 +153,13 @@ class TestSystematics:
         check = next(c for c in assessment.systematics if c.name == "bright_star_artifact")
         assert check.excluded is True
 
+    def test_bright_gaia_source_without_separation_does_not_crash(self) -> None:
+        alert = make_gold(gaia_g_mag=11.5, gaia_separation_arcsec=None)
+        _, assessment = classify_and_assess(alert)
+        check = next(c for c in assessment.systematics if c.name == "bright_star_artifact")
+        assert check.excluded is True
+        assert check.note == "no bright Gaia source coincident"
+
     def test_moving_object_not_excluded_for_solar_system(self) -> None:
         alert = make_gold(fink_class="Solar System MPC")
         _, assessment = classify_and_assess(alert)

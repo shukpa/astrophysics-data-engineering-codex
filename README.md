@@ -15,7 +15,7 @@ Every night, survey telescopes like the Zwicky Transient Facility (ZTF) generate
 This project combines modern data engineering with AI agents to:
 1. **Process alerts at scale** using Spark and Delta Lake
 2. **Classify known phenomena** with ML models (hot path)
-3. **Investigate interesting events** with LLM-powered agents (warm path)
+3. **Investigate interesting events** with deterministic anomaly assessment (warm path)
 4. **Surface true anomalies** for human astronomer review (cold path)
 
 ## Architecture
@@ -49,7 +49,7 @@ We use the medallion (bronze/silver/gold) architecture for progressive data refi
 | Path | Latency | Method | Purpose |
 |------|---------|--------|---------|
 | **Hot** | Seconds | Spark + ML | Ingest, clean, basic classification |
-| **Warm** | Minutes | LLM Agents | Triage flagged events, cross-reference, assess anomalies |
+| **Warm** | Minutes | Deterministic agent | Triage flagged events, cross-reference, assess anomalies |
 | **Cold** | Hours | Human | Review detailed reports for genuinely unusual events |
 
 ## Project Structure
@@ -115,12 +115,13 @@ astrophysics-data-engineering-codex/
 - [x] Euclid Q1 open-data ingestion (Phase 2): ESA TAP client (MER final catalogue →
       bronze with DR-tagged provenance), SLDE strong-lens catalogue → bronze/silver
       with grade filtering, and the gold-layer `lens_field_transient` cross-match
+- [x] Multi-probe constraint and lensing science harness (Phase 3): reproducible
+      cosmology/lensing utilities and executed notebooks with provenance and sensitivity floors
 - [x] Test framework + smoke/ingest scripts (live or offline synthetic)
 
 **Next — see [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md) for the full plan:**
 
-- [ ] Multi-probe constraint & lensing science harness (`feat/constraint-harness`)
-- [ ] Lens-aware anomaly agent (`feat/anomaly-agent`)
+- [ ] Lens-aware classification and anomaly agent (`feat/anomaly-agent`, PR #8 pending merge)
 - [ ] Multi-messenger GW counterpart channel (`feat/gw-counterparts`)
 
 ## Getting Started

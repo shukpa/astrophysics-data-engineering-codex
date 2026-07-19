@@ -141,13 +141,14 @@ class TestPriority:
         assert result.follow_up_priority is FollowUpPriority.CRITICAL
         assert "gw_counterpart_candidate" in result.priority_reason
 
-    def test_high_anomaly_score_is_critical(self) -> None:
+    def test_high_anomaly_score_is_high_and_enters_warm_path(self) -> None:
         result = BaselineClassifier().classify(
             make_gold(fink_class=None, drb_score=0.5, is_likely_stellar=None)
         )
         assert result.anomaly_score >= 0.7
-        assert result.follow_up_priority is FollowUpPriority.CRITICAL
+        assert result.follow_up_priority is FollowUpPriority.HIGH
         assert "anomaly_score" in result.priority_reason
+        assert "warm-path rigor check" in result.priority_reason
 
     def test_valuable_known_types_are_high(self) -> None:
         for cls in ("Kilonova candidate", "Early SN Ia candidate", "Microlensing candidate"):

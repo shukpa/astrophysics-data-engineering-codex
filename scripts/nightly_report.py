@@ -11,7 +11,8 @@ completeness.
 Usage (after a gold run, e.g. the smoke script):
 
     python scripts/nightly_report.py --gold-path data/smoke/gold/alerts
-    python scripts/nightly_report.py --gold-path data/gold/alerts --top-n 10
+    python scripts/nightly_report.py --gold-path data/gold/alerts \
+        --observation-date 2026-07-19 --top-n 10
 """
 
 from __future__ import annotations
@@ -38,7 +39,12 @@ from src.utils.config import (
 )
 
 
-def load_gold_alerts(gold_path: Path) -> list[GoldAlert]:
+def load_gold_alerts(
+    gold_path: Path,
+    *,
+    observation_date: str | None = None,
+    gold_processing_id: str | None = None,
+) -> list[GoldAlert]:
     """Load gold rows from a Parquet file or directory into typed models.
 
     Parquet round-trips absent optional values as NaN; those are cleaned to
@@ -49,7 +55,20 @@ def load_gold_alerts(gold_path: Path) -> list[GoldAlert]:
     # Read the dataset root (file OR directory) in one call so pyarrow
     # reconstructs hive-partition columns (gold is partitioned on
     # observation_date — reading files individually would drop it).
-    df = pd.read_parquet(gold_path)
+    filters = []
+    if observation_date is not None:
+        filters.append(("observation_date", "=", observation_date))
+    if gold_processing_id is not None:
+        filters.append(("gold_processing_id", "=", gold_processing_id))
+    df = pd.read_parquet(gold_path, filters=filters or None)
+
+    if gold_path.is_dir() and not filters and "observation_date" in df.columns:
+        observation_dates = set(df["observation_date"].dropna().astype(str))
+        if len(observation_dates) > 1:
+            raise ValueError(
+                "Gold dataset spans multiple observation dates; pass observation_date "
+                "or gold_processing_id to scope the nightly report."
+            )
     alerts: list[GoldAlert] = []
     for record in df.to_dict("records"):
         cleaned = {key: none_if_nan(value) for key, value in record.items()}
@@ -219,7 +238,9 @@ def render_markdown(
     else:
         lines.append("No alerts in batch.")
 
-    escalated = [x for x in assessments if x.escalate]
+    escalated = [
+        x for x in assessments if x.escalate and x.follow_up_priority.at_least(minimum_priority)
+    ]
     lines += ["", f"## Escalations to human review (priority >= {minimum_priority.value})", ""]
     if escalated:
         for x in escalated:
@@ -268,6 +289,8 @@ def run_report(
     output_dir: Path,
     *,
     top_n: int | None = None,
+    observation_date: str | None = None,
+    gold_processing_id: str | None = None,
     classification_settings: ClassificationSettings | None = None,
     anomaly_settings: AnomalySettings | None = None,
     report_settings: ReportSettings | None = None,
@@ -279,7 +302,11 @@ def run_report(
     top = top_n or report_config.include_top_n_events
     minimum_priority = FollowUpPriority(report_config.minimum_priority)
 
-    alerts = load_gold_alerts(gold_path)
+    alerts = load_gold_alerts(
+        gold_path,
+        observation_date=observation_date,
+        gold_processing_id=gold_processing_id,
+    )
     classifier = BaselineClassifier(classification_settings=classification_config)
     classifications = classifier.classify_batch(alerts)
 
@@ -294,7 +321,7 @@ def run_report(
     assessments = [agent.assess(a, c, n_alerts_processed=max(1, len(alerts))) for a, c in flagged]
 
     metrics = compute_metrics(alerts, classifications, assessments)
-    report_date = datetime.now(UTC).strftime("%Y-%m-%d")
+    report_date = observation_date or datetime.now(UTC).strftime("%Y-%m-%d")
     markdown = render_markdown(
         report_date=report_date,
         gold_path=gold_path,
@@ -326,6 +353,8 @@ def run_report(
 
     return {
         "report_date": report_date,
+        "observation_date": observation_date,
+        "gold_processing_id": gold_processing_id,
         "alerts_processed": len(alerts),
         "classified": len(classifications),
         "warm_path_assessed": len(assessments),
@@ -351,6 +380,16 @@ def parse_args() -> argparse.Namespace:
         help="Gold Parquet file, or directory searched recursively for *.parquet.",
     )
     parser.add_argument(
+        "--observation-date",
+        default=None,
+        help="Observation date (YYYY-MM-DD) used to scope a partitioned Gold root.",
+    )
+    parser.add_argument(
+        "--gold-processing-id",
+        default=None,
+        help="Gold processing ID used to scope the report to one processing batch.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -364,7 +403,13 @@ def main() -> None:
     args = parse_args()
     settings = get_settings()
     output_dir = args.output_dir or (settings.storage.base_path / settings.report.output_path)
-    summary = run_report(args.gold_path, output_dir, top_n=args.top_n)
+    summary = run_report(
+        args.gold_path,
+        output_dir,
+        top_n=args.top_n,
+        observation_date=args.observation_date,
+        gold_processing_id=args.gold_processing_id,
+    )
     for key, value in summary.items():
         if key == "metrics":
             continue

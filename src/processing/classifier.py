@@ -323,9 +323,10 @@ class BaselineClassifier:
             )
         if anomaly_score >= self._config.anomaly_score_threshold:
             return (
-                FollowUpPriority.CRITICAL,
+                FollowUpPriority.HIGH,
                 f"anomaly_score {anomaly_score:.2f} >= "
-                f"{self._config.anomaly_score_threshold} (potentially new/anomalous)",
+                f"{self._config.anomaly_score_threshold} "
+                "(potentially new/anomalous; requires warm-path rigor check)",
             )
         if primary in self._config.high_priority_classes:
             return (

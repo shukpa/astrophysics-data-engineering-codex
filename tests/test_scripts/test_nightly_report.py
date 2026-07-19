@@ -5,16 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from scripts.nightly_report import load_gold_alerts, run_report
 from scripts.run_fink_gold_smoke import run_smoke
 from tests.test_processing.test_classifier import make_gold
+
+from src.utils.config import ReportSettings
 
 SLDE_FIXTURE = Path("tests/fixtures/euclid/slde_q1_sample.json")
 
 
 def write_gold_parquet(alerts, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame([a.to_flat_dict() for a in alerts]).to_parquet(path, index=False)
+    df = pd.DataFrame([a.to_flat_dict() for a in alerts])
+    if path.parent.name.startswith("observation_date="):
+        df = df.drop(columns=["observation_date"])
+    df.to_parquet(path, index=False)
     return path
 
 
@@ -37,6 +43,82 @@ def test_load_gold_alerts_cleans_parquet_nans(tmp_path: Path) -> None:
     assert reloaded["ZTF26clean02"].candidate_id is None
     assert reloaded["ZTF26clean02"].gaia_g_mag is None
     assert reloaded["ZTF26clean01"].candidate_id == 123456789
+
+
+def test_report_rejects_unscoped_multi_night_gold_root(tmp_path: Path) -> None:
+    gold_root = tmp_path / "gold"
+    write_gold_parquet(
+        [make_gold(object_id="ZTF26nightone", observation_date="2026-07-13")],
+        gold_root / "observation_date=2026-07-13" / "batch.parquet",
+    )
+    write_gold_parquet(
+        [make_gold(object_id="ZTF26nighttwo", observation_date="2026-07-14")],
+        gold_root / "observation_date=2026-07-14" / "batch.parquet",
+    )
+
+    with pytest.raises(ValueError, match="spans multiple observation dates"):
+        run_report(gold_root, tmp_path / "reports")
+
+
+def test_report_scopes_multi_night_gold_root_by_date(tmp_path: Path) -> None:
+    gold_root = tmp_path / "gold"
+    write_gold_parquet(
+        [
+            make_gold(
+                object_id="ZTF26nightone",
+                observation_date="2026-07-13",
+                lens_name="EUCL J175707.2+653936",
+            )
+        ],
+        gold_root / "observation_date=2026-07-13" / "batch.parquet",
+    )
+    write_gold_parquet(
+        [
+            make_gold(
+                object_id="ZTF26nighttwo",
+                observation_date="2026-07-14",
+                lens_field_transient=True,
+                lens_name="EUCL J175707.2+653936",
+            )
+        ],
+        gold_root / "observation_date=2026-07-14" / "batch.parquet",
+    )
+
+    summary = run_report(
+        gold_root,
+        tmp_path / "reports",
+        observation_date="2026-07-14",
+    )
+
+    assert summary["alerts_processed"] == 1
+    assert summary["report_date"] == "2026-07-14"
+    assessments = pd.read_parquet(summary["assessments_output"])
+    assert assessments["n_alerts_processed"].tolist() == [1]
+    report = Path(summary["report_output"]).read_text(encoding="utf-8")
+    assert "ZTF26nighttwo" in report
+    assert "ZTF26nightone" not in report
+
+
+def test_report_scopes_gold_root_by_processing_id(tmp_path: Path) -> None:
+    gold_root = tmp_path / "gold"
+    write_gold_parquet(
+        [
+            make_gold(object_id="ZTF26batchone", gold_processing_id="gold-one"),
+            make_gold(object_id="ZTF26batchtwo", gold_processing_id="gold-two"),
+        ],
+        gold_root / "batch.parquet",
+    )
+
+    summary = run_report(
+        gold_root,
+        tmp_path / "reports",
+        gold_processing_id="gold-two",
+    )
+
+    assert summary["alerts_processed"] == 1
+    report = Path(summary["report_output"]).read_text(encoding="utf-8")
+    assert "ZTF26batchtwo" in report
+    assert "ZTF26batchone" not in report
 
 
 def test_run_report_on_mixed_batch(tmp_path: Path) -> None:
@@ -111,8 +193,41 @@ def test_run_report_empty_batch(tmp_path: Path) -> None:
     assert Path(summary["report_output"]).exists()
 
 
+def test_report_minimum_priority_filters_escalation_section(tmp_path: Path) -> None:
+    alerts = [
+        make_gold(
+            object_id="ZTF26highonly",
+            fink_class="AGN",
+            simbad_otype="QSO",
+            lc_mag_rate_per_day=3.0,
+            lc_amplitude=None,
+            lc_n_detections=12,
+            drb_score=0.99,
+        ),
+        make_gold(
+            object_id="ZTF26critical",
+            lens_field_transient=True,
+            lens_name="EUCL J175707.2+653936",
+        ),
+    ]
+    gold_file = write_gold_parquet(alerts, tmp_path / "gold" / "batch.parquet")
+
+    summary = run_report(
+        gold_file,
+        tmp_path / "reports",
+        report_settings=ReportSettings(minimum_priority="CRITICAL"),
+    )
+
+    report = Path(summary["report_output"]).read_text(encoding="utf-8")
+    escalation_section = report.split("## Escalations to human review", maxsplit=1)[1].split(
+        "## System metrics", maxsplit=1
+    )[0]
+    assert "ZTF26critical" in escalation_section
+    assert "ZTF26highonly" not in escalation_section
+
+
 def test_end_to_end_smoke_gold_into_nightly_report(tmp_path: Path) -> None:
-    """Acceptance: the agent runs on a real (synthetic) nightly batch."""
+    """Acceptance: the agent runs on an offline synthetic nightly batch."""
     smoke = run_smoke(
         fink_class="SN candidate",
         limit=8,

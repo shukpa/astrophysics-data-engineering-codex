@@ -195,7 +195,8 @@ class AnomalyAgent:
         bright_neighbour = (
             alert.gaia_g_mag is not None
             and alert.gaia_g_mag <= 13.0
-            and (alert.gaia_separation_arcsec or 0.0) <= 3.0
+            and alert.gaia_separation_arcsec is not None
+            and alert.gaia_separation_arcsec <= 3.0
         )
         checks.append(
             SystematicCheck(
@@ -225,15 +226,14 @@ class AnomalyAgent:
 
         The statistical verdict is evaluated first, so an event that earns
         escalation on its own merits carries the informative reason. The
-        unconditional-escalation rule applies to *flag-driven* CRITICAL
-        events (every ``lens_field_transient`` hit, every
+        unconditional-escalation rule applies to CRITICAL events (every
+        ``lens_field_transient`` hit, every
         ``gw_counterpart_candidate``) — those are externally triggered and
-        time-critical, and no ML score or statistic may veto them. A
-        CRITICAL assigned purely for a high anomaly *score* is exactly the
-        kind of ML verdict the rigor gate exists to check, so it does NOT
-        bypass the statistics: with an unexcluded systematic or an
-        uninteresting FAP it stays in the report, unescalated, with the
-        blocking reason on record.
+        time-critical, and no ML score or statistic may veto them. A high
+        anomaly *score* is routed as HIGH priority and is exactly the
+        kind of ML verdict the rigor gate exists to check. With an unexcluded
+        systematic or an uninteresting FAP it stays in the report,
+        unescalated, with the blocking reason on record.
         """
         failed = [c.name for c in systematics if not c.excluded]
         if (

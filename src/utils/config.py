@@ -232,9 +232,6 @@ class ClassificationSettings(BaseSettings):
     are the v0 baseline; an own light-curve-feature model is the upgrade path.
 
     Attributes:
-        high_confidence_threshold: Confidence at/above which a classification
-            is treated as secure (suppresses anomaly escalation for
-            well-explained events).
         anomaly_score_threshold: Anomaly score at/above which an event is
             handed to the warm-path anomaly agent.
         high_priority_classes: Fink classes that are scientifically valuable
@@ -245,7 +242,6 @@ class ClassificationSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="CLASSIFICATION_")
 
-    high_confidence_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     anomaly_score_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     high_priority_classes: list[str] = Field(
         default_factory=lambda: [
@@ -298,7 +294,7 @@ class ReportSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="REPORT_")
 
     include_top_n_events: int = Field(default=20, ge=1, le=1000)
-    minimum_priority: str = "HIGH"
+    minimum_priority: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "HIGH"
     output_path: str = "reports"
 
 
