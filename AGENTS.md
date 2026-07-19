@@ -3,10 +3,9 @@
 ## Project: Agentic Galactic Discovery (AGD)
 
 This file is the **single, provider-neutral operating contract for every agent**
-that works in this repo, regardless of toolchain (Claude/Fable, Codex/GPT, or
-other). It is the primary operating context. There are intentionally **no**
-provider-specific context files (e.g. no `CLAUDE.md`, no `CLAUDE_CODE_CONTEXT.md`);
-their removal was deliberate. Do not re-introduce them.
+that works in this repo, regardless of toolchain. It is the primary operating
+context. There are intentionally **no** provider-specific context files; do not
+introduce them.
 
 ## Mission
 
@@ -150,8 +149,45 @@ black src/ scripts/ tests/
   integrals); `matplotlib`/`nbformat`/`nbconvert` are dev-only (notebooks).
   Re-run against DR1-Foundation by updating the numbers in `constraints.py` and
   swapping N≈500 → N≈7000 — no code change.
-- The anomaly agent (Phase 4) and the GW standard-siren counterpart channel
-  (Phase 5) are the next phases — see `AGD_FORWARD_PLAN.md`.
+- **Phase 4 (classification + anomaly agent) implemented on PR #8:** the Tier-1
+  classification-confidence framework and the warm-path anomaly agent, both
+  deterministic and LLM-free (the repo still contains zero LLM calls; the
+  `llm_runtime` placeholders in `config/default.yaml` are the only unbuilt
+  slot). `src/processing/classifier.py` (hot path) turns each gold row into a
+  `ClassifiedAlert`: Fink broker class as the v0 baseline, confidence built
+  from evidence agreement (rb/drb quality, SIMBAD/CDS consistency, the Gaia
+  stellar discriminator), alternatives when evidence contradicts the label, an
+  anomaly score = max(evidence disagreement, saturating light-curve deviation
+  from per-class baselines), and a follow-up priority. Escalation rules:
+  `lens_field_transient` / `gw_counterpart_candidate` are CRITICAL regardless
+  of score (the GW flag is picked up by duck typing the moment Phase 5 adds
+  it). `src/agents/anomaly_agent.py` (warm path only) assesses the flagged
+  subset and stamps the four mandatory rigor fields on every flag: baseline
+  comparison, deviation in sigma, trials-corrected false-alarm probability,
+  and a known-systematic exclusion checklist (bogus, moving object, stellar
+  masquerade, insufficient history, bright-star artifact). CRITICAL always
+  escalates; score-driven anomalies are HIGH priority, enter the warm path,
+  and must still pass the rigor gate. `scripts/nightly_report.py` accepts an
+  observation-date or gold-processing-ID selector and refuses to combine
+  multiple nights implicitly. It renders counts by class/priority,
+  lens-field matches, top anomalies with their rigor fields, and the system
+  metrics section (latency, confidence, Fink-vs-SIMBAD agreement proxy,
+  FAP tracking, cross-match completeness) as Markdown + JSON + Parquet.
+- **Reliability/calibration checkpoint:** the default Fink endpoint is
+  `https://api.ztf.fink-portal.org`; timeout/retry/backoff settings are wired
+  into the client and malformed JSON fails visibly. Local storage is Parquet or
+  JSON; Delta is explicitly rejected until implemented. Silver writes are
+  replay-idempotent on candidate ID (with object/JD/filter fallback). Gold now
+  computes per-filter light-curve features with photometric uncertainties and
+  cadence so alternating bands are not mistaken for time variability.
+  `src/analysis/calibration.py` and `scripts/run_fink_calibration_replay.py`
+  provide bounded, object-disjoint temporal replay against independently
+  labelled BTS/Fink alerts and report accuracy, false positives, and missed
+  review targets (100-alert default, 1,000-alert total hard cap). Anomaly
+  scores and FAP remain routing heuristics until
+  empirically calibrated; never present them as discovery significance.
+- The GW standard-siren counterpart channel (Phase 5) is the next phase —
+  see `AGD_FORWARD_PLAN.md`.
 - No production agent runtime or provider has been selected; the platform stays
   provider-neutral by design.
 
@@ -176,14 +212,25 @@ black src/ scripts/ tests/
 - `src/analysis/`: Phase 3 constraint & lensing harness (downstream of gold;
   never imported by the pipeline) — `constraints.py` (transcribed published
   values + provenance), `cosmology.py` (CPL/w0waCDM/growth/tension),
-  `lensing.py` (SIS/SIE + sensitivity floor)
+  `lensing.py` (SIS/SIE + sensitivity floor), `calibration.py` (labelled
+  temporal replay metrics)
 - `notebooks/combined_probe_constraints.ipynb` / `notebooks/euclid_lens_
   statistics.ipynb`: the 3a verdict and 3b sensitivity-floor notebooks
+- `src/processing/classifier.py`: hot-path Tier-1 classifier (deterministic;
+  confidence, alternatives, anomaly score, priority; per-class LC baselines)
+- `src/agents/anomaly_agent.py`: warm-path anomaly agent (four rigor fields,
+  escalation rules; no LLM)
+- `src/models/classification.py`: ClassifiedAlert / AnomalyAssessment /
+  FollowUpPriority contracts
+- `scripts/nightly_report.py`: nightly report CLI (classes, lens matches,
+  top anomalies, system metrics)
 - `scripts/ingest_euclid_q1.py`: Euclid Q1 ingestion (live MER + SLDE file;
   `--skip-mer` for offline environments)
 - `scripts/run_fink_gold_smoke.py`: bronze→silver→gold smoke run
   (`--source synthetic --no-crossmatch` for offline environments;
   `--lens-catalog` to exercise the lens-field cross-match)
+- `scripts/run_fink_calibration_replay.py`: bounded BTS/Fink replay with
+  temporal split, object-leakage rejection, and calibration diagnostics
 - `src/utils/config.py`: runtime settings and environment-variable contract
 - `config/default.yaml`: non-loaded planning config for future phases
 - `tests/conftest.py`: shared test fixtures

@@ -46,20 +46,16 @@ class FinkSettings(BaseSettings):
         timeout_seconds: Request timeout in seconds.
         max_retries: Maximum number of retry attempts for failed requests.
         retry_backoff_base: Base delay (seconds) for exponential backoff.
-        rate_limit_requests: Maximum requests per rate limit window.
-        rate_limit_window_seconds: Rate limit window duration in seconds.
-        default_output_format: Default output format for API responses.
+        default_output_format: API response format supported by the client.
     """
 
     model_config = SettingsConfigDict(env_prefix="FINK_")
 
-    base_url: str = "https://api.fink-portal.org"
+    base_url: str = "https://api.ztf.fink-portal.org"
     timeout_seconds: int = Field(default=30, ge=1, le=300)
     max_retries: int = Field(default=3, ge=0, le=10)
     retry_backoff_base: float = Field(default=2.0, ge=1.0, le=10.0)
-    rate_limit_requests: int = Field(default=100, ge=1)
-    rate_limit_window_seconds: int = Field(default=60, ge=1)
-    default_output_format: Literal["json", "csv", "parquet", "votable"] = "json"
+    default_output_format: Literal["json"] = "json"
 
     @field_validator("base_url")
     @classmethod
@@ -77,9 +73,8 @@ class StorageSettings(BaseSettings):
         silver_path: Path for silver layer data (relative to base_path).
         gold_path: Path for gold layer data (relative to base_path).
         checkpoint_path: Path for streaming checkpoints.
-        file_format: Default file format for local storage.
-        partition_columns: Default columns to partition by.
-        enable_delta: Whether to use Delta Lake format (requires Databricks).
+        file_format: Local storage format. Delta is explicitly unsupported.
+        enable_delta: Reserved compatibility flag; enabling it is rejected.
     """
 
     model_config = SettingsConfigDict(env_prefix="STORAGE_")
@@ -92,8 +87,17 @@ class StorageSettings(BaseSettings):
     euclid_silver_path: str = "silver/euclid"
     checkpoint_path: str = "checkpoints"
     file_format: Literal["parquet", "delta", "json"] = "parquet"
-    partition_columns: list[str] = Field(default_factory=lambda: ["observation_date"])
     enable_delta: bool = False
+
+    @model_validator(mode="after")
+    def reject_unsupported_delta(self) -> "StorageSettings":
+        """Reject Delta configuration until a real Delta writer is implemented."""
+        if self.file_format == "delta" or self.enable_delta:
+            raise ValueError(
+                "Delta storage is not implemented by the local processors; "
+                "use file_format='parquet' and enable_delta=False."
+            )
+        return self
 
     @property
     def bronze_full_path(self) -> Path:
@@ -134,8 +138,6 @@ class ProcessingSettings(BaseSettings):
         max_alerts_per_request: Maximum alerts to fetch in a single API request.
         enable_image_processing: Whether to process image cutouts.
         schema_validation_mode: How to handle schema validation failures.
-        deduplication_window_hours: Time window for deduplication (in hours).
-        min_detection_significance: Minimum SNR for valid detections.
     """
 
     model_config = SettingsConfigDict(env_prefix="PROCESSING_")
@@ -144,8 +146,6 @@ class ProcessingSettings(BaseSettings):
     max_alerts_per_request: int = Field(default=100, ge=1, le=10000)
     enable_image_processing: bool = False
     schema_validation_mode: Literal["strict", "warn", "ignore"] = "strict"
-    deduplication_window_hours: int = Field(default=24, ge=1)
-    min_detection_significance: float = Field(default=5.0, ge=0.0)
 
 
 class CrossmatchSettings(BaseSettings):
@@ -224,6 +224,80 @@ class EuclidSettings(BaseSettings):
     tap_ca_bundle: str | None = None
 
 
+class ClassificationSettings(BaseSettings):
+    """Configuration for the Tier-1 classification-confidence framework.
+
+    The hot-path baseline classifier (``src/processing/classifier.py``) is
+    deterministic and LLM-free (architecture rule 1). Fink's broker classes
+    are the v0 baseline; an own light-curve-feature model is the upgrade path.
+
+    Attributes:
+        anomaly_score_threshold: Anomaly score at/above which an event is
+            handed to the warm-path anomaly agent.
+        high_priority_classes: Fink classes that are scientifically valuable
+            known types (follow-up priority HIGH).
+        low_priority_classes: Well-characterised known types (priority LOW,
+            archive only).
+    """
+
+    model_config = SettingsConfigDict(env_prefix="CLASSIFICATION_")
+
+    anomaly_score_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    high_priority_classes: list[str] = Field(
+        default_factory=lambda: [
+            "Kilonova candidate",
+            "Early SN Ia candidate",
+            "Microlensing candidate",
+        ]
+    )
+    low_priority_classes: list[str] = Field(
+        default_factory=lambda: [
+            "Variable Star",
+            "YSO",
+            "Solar System MPC",
+            "Solar System candidate",
+        ]
+    )
+
+
+class AnomalySettings(BaseSettings):
+    """Configuration for the warm-path anomaly agent.
+
+    Attributes:
+        outlier_sigma_threshold: Deviation (in sigma vs the class baseline)
+            at/above which an event counts as a statistical outlier.
+        minimum_detections_for_analysis: Light-curve detections required
+            before deviations are considered meaningful (single-epoch
+            "anomalies" are overwhelmingly artifacts).
+        max_false_alarm_probability: Trials-corrected false-alarm probability
+            an assessment must beat before a non-CRITICAL event escalates.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ANOMALY_")
+
+    outlier_sigma_threshold: float = Field(default=3.0, ge=0.0)
+    minimum_detections_for_analysis: int = Field(default=5, ge=1)
+    max_false_alarm_probability: float = Field(default=0.01, gt=0.0, le=1.0)
+
+
+class ReportSettings(BaseSettings):
+    """Configuration for the nightly report CLI.
+
+    Attributes:
+        include_top_n_events: How many top anomalies to include.
+        minimum_priority: Lowest follow-up priority included in the
+            notification-worthy section of the report.
+        output_path: Directory for generated reports
+            (relative to StorageSettings.base_path).
+    """
+
+    model_config = SettingsConfigDict(env_prefix="REPORT_")
+
+    include_top_n_events: int = Field(default=20, ge=1, le=1000)
+    minimum_priority: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "HIGH"
+    output_path: str = "reports"
+
+
 class LoggingSettings(BaseSettings):
     """Configuration for structured logging.
 
@@ -257,6 +331,9 @@ class Settings(BaseSettings):
         processing: Processing pipeline configuration.
         crossmatch: Catalog cross-match configuration (gold layer).
         euclid: Euclid open-data ingestion configuration.
+        classification: Tier-1 classification framework configuration.
+        anomaly: Warm-path anomaly agent configuration.
+        report: Nightly report configuration.
         logging: Logging configuration.
     """
 
@@ -277,6 +354,9 @@ class Settings(BaseSettings):
     processing: ProcessingSettings = Field(default_factory=ProcessingSettings)
     crossmatch: CrossmatchSettings = Field(default_factory=CrossmatchSettings)
     euclid: EuclidSettings = Field(default_factory=EuclidSettings)
+    classification: ClassificationSettings = Field(default_factory=ClassificationSettings)
+    anomaly: AnomalySettings = Field(default_factory=AnomalySettings)
+    report: ReportSettings = Field(default_factory=ReportSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     @model_validator(mode="after")

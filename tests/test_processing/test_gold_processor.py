@@ -314,6 +314,18 @@ class TestLightCurveFeatures:
         assert alert.lc_amplitude == pytest.approx(0.6)
         # Last two epochs: 18.8 -> 18.5 over 1 day = brightening at -0.3 mag/day
         assert alert.lc_mag_rate_per_day == pytest.approx(-0.3)
+        g_band = alert.lc_per_filter["g"]
+        r_band = alert.lc_per_filter["r"]
+        assert g_band.n_detections == 2
+        assert g_band.amplitude == pytest.approx(0.3)
+        assert g_band.amplitude_uncertainty == pytest.approx((0.06**2 + 0.05**2) ** 0.5)
+        assert g_band.median_cadence_days == pytest.approx(1.0)
+        assert g_band.mag_rate_per_day == pytest.approx(-0.3)
+        assert g_band.mag_rate_uncertainty == pytest.approx((0.06**2 + 0.05**2) ** 0.5)
+        expected_weighted = (18.8 / 0.06**2 + 18.5 / 0.05**2) / (1 / 0.06**2 + 1 / 0.05**2)
+        assert g_band.mag_weighted_mean == pytest.approx(expected_weighted)
+        assert r_band.n_detections == 1
+        assert r_band.median_cadence_days is None
 
     def test_single_epoch_defaults(self, tmp_path) -> None:
         processor = make_processor(tmp_path, enable_crossmatch=False)
@@ -325,6 +337,7 @@ class TestLightCurveFeatures:
         assert alert.lc_amplitude == pytest.approx(0.0)
         assert alert.lc_mag_std == pytest.approx(0.0)
         assert alert.lc_mag_rate_per_day is None
+        assert alert.lc_per_filter["g"].n_detections == 1
 
     def test_malformed_payload_is_tolerated(self, tmp_path) -> None:
         processor = make_processor(tmp_path, enable_crossmatch=False)
@@ -340,6 +353,71 @@ class TestLightCurveFeatures:
         silver = make_silver_alert(raw_payload_json=payload)
         alert = processor.process_batch(make_batch(silver)).alerts[0]
         assert alert.lc_mag_rate_per_day is None  # zero dt guarded
+
+    def test_filter_color_difference_is_not_mixed_into_band_features(self, tmp_path) -> None:
+        payload = json.dumps(
+            {
+                "prv_candidates": [
+                    {"jd": 2459997.5, "fid": 1, "magpsf": 19.0, "sigmapsf": 0.05},
+                    {"jd": 2459998.5, "fid": 2, "magpsf": 17.0, "sigmapsf": 0.05},
+                    {"jd": 2459999.5, "fid": 1, "magpsf": 19.0, "sigmapsf": 0.05},
+                ]
+            }
+        )
+        silver = make_silver_alert(
+            magpsf=17.0,
+            sigmapsf=0.05,
+            filter_id=2,
+            filter_name="r",
+            raw_payload_json=payload,
+        )
+        processor = make_processor(tmp_path, enable_crossmatch=False)
+
+        alert = processor.process_batch(make_batch(silver)).alerts[0]
+
+        assert alert.lc_amplitude == pytest.approx(2.0)
+        assert alert.lc_per_filter["g"].amplitude == pytest.approx(0.0)
+        assert alert.lc_per_filter["r"].amplitude == pytest.approx(0.0)
+        assert alert.lc_per_filter["g"].median_cadence_days == pytest.approx(2.0)
+
+    def test_batch_history_builds_per_filter_features_without_future_leakage(
+        self, tmp_path
+    ) -> None:
+        alerts = [
+            make_silver_alert(
+                object_id="ZTF21history",
+                candidate_id=100 + index,
+                jd=2459997.5 + index,
+                mjd=59997.0 + index,
+                magpsf=mag,
+                sigmapsf=0.05,
+                filter_id=fid,
+                filter_name={1: "g", 2: "r"}[fid],
+                raw_payload_json=None,
+            )
+            for index, (fid, mag) in enumerate([(1, 19.0), (2, 17.0), (1, 18.5), (2, 16.5)])
+        ]
+        processor = make_processor(tmp_path, enable_crossmatch=False)
+
+        gold = processor.process_batch(make_batch(*alerts)).alerts
+
+        assert gold[0].lc_n_detections == 1
+        assert gold[0].lc_per_filter["g"].n_detections == 1
+        assert "r" not in gold[0].lc_per_filter
+        assert gold[-1].lc_n_detections == 4
+        assert gold[-1].lc_per_filter["g"].n_detections == 2
+        assert gold[-1].lc_per_filter["r"].n_detections == 2
+        assert gold[-1].lc_per_filter["g"].amplitude == pytest.approx(0.5)
+        assert gold[-1].lc_per_filter["r"].amplitude == pytest.approx(0.5)
+
+    def test_prefixed_previous_candidates_are_read_from_raw_fink_payload(self, tmp_path) -> None:
+        payload = json.dumps({"i:prv_candidates": [{"jd": 2459999.5, "fid": "1", "magpsf": 19.0}]})
+        silver = make_silver_alert(raw_payload_json=payload)
+        processor = make_processor(tmp_path, enable_crossmatch=False)
+
+        alert = processor.process_batch(make_batch(silver)).alerts[0]
+
+        assert alert.lc_per_filter["g"].n_detections == 2
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +525,7 @@ class TestProvenanceAndStorage:
         assert "gaia_source_id" in df.columns
         assert "is_likely_stellar" in df.columns
         assert "raw_payload_json" not in df.columns
+        assert "lc_per_filter_json" in df.columns
 
     def test_empty_batch_write_is_noop(self, tmp_path) -> None:
         processor = make_processor(tmp_path, enable_crossmatch=False)

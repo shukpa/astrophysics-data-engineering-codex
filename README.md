@@ -1,339 +1,389 @@
 # Agentic Galactic Discovery
 
-**Real-time astronomical transient discovery using agentic AI**
+**A provenance-first laboratory for finding the unexpected in the transient sky.**
 
-An open-source platform for detecting and classifying astronomical transients from telescope survey data. We ingest streaming alerts from ZTF (and soon Rubin/LSST), process them through a medallion lakehouse architecture (local Parquet today, Databricks-ready), and use AI agents to identify genuinely anomalous events that might represent new physics.
+Survey telescopes repeatedly image the sky and report what changed. Most alerts
+have familiar explanations: variable stars, moving objects, active galaxies, or
+ordinary supernovae. The interesting problem is deciding which small fraction
+deserves scarce follow-up time without quietly discarding the genuinely
+unexpected.
 
-Beyond the transient stream, AGD is growing a **multi-probe science layer**: batch ingestion of Euclid open-data catalogues (starting with the Q1 strong-lens sample) and a falsifiable, combined-probe cosmology analysis (DESI + CMB + SNe + weak lensing) that tests whether dark energy and gravity deviate from GR+ΛCDM. The full roadmap and phase state live in [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md).
+Agentic Galactic Discovery (AGD) is an early-stage, open-source research
+pipeline for exploring that problem with public ZTF/Fink alerts and astronomy
+catalogues. It turns bounded alert batches into validated, enriched, and
+auditable candidates for human review, then measures where its own routing
+logic succeeds or fails. A separate, downstream science layer uses published
+cosmological constraints and lens statistics to ask more targeted questions
+about gravity and the dark sector.
 
-See [`AGENTS.md`](AGENTS.md) for the repository's development instructions and operating conventions, and [`SCIENCE_GOALS.md`](SCIENCE_GOALS.md) for the science motivation.
+The distinction matters: **an unusual light curve can reveal a new object; it
+does not, by itself, reveal new physics.**
 
-## Vision
+> **Development snapshot:** Bronze, Silver, Gold, deterministic
+> classification/anomaly assessment, Euclid Q1 tooling, constraint notebooks,
+> and a bounded calibration replay are implemented. Kafka streaming,
+> Spark/Delta-scale processing, Rubin ingestion, and the gravitational-wave
+> counterpart channel are not yet implemented. There are no LLM calls in the
+> ingestion or processing path.
 
-Every night, survey telescopes like the Zwicky Transient Facility (ZTF) generate hundreds of thousands of alerts about objects that have changed brightness. Most are known phenomena—variable stars, asteroids, routine supernovae. But hidden in this data stream could be something unprecedented: a new class of transient, a rare kilonova from merging neutron stars, or gravitational microlensing revealing an isolated black hole.
+[`SCIENCE_GOALS.md`](SCIENCE_GOALS.md) defines the scientific rules of
+inference. [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md) contains the detailed
+roadmap and current evidence. [`AGENTS.md`](AGENTS.md) is the contributor and
+coding-agent contract.
 
-This project combines modern data engineering with AI agents to:
-1. **Process alerts at scale** using Spark and Delta Lake
-2. **Classify known phenomena** with ML models (hot path)
-3. **Investigate interesting events** with LLM-powered agents (warm path)
-4. **Surface true anomalies** for human astronomer review (cold path)
+## Two Questions, Kept Deliberately Separate
 
-## Architecture
+AGD supports two complementary modes of inquiry. They share data and
+infrastructure, but not conclusions.
 
-### Medallion Data Architecture
+### 1. What changed, and is it worth a closer look?
 
-We use the medallion (bronze/silver/gold) architecture for progressive data refinement:
+The **agnostic discovery path** ingests time-domain alerts, rejects poor-quality
+detections, cross-matches known catalogues, characterizes light curves, and
+routes unusual or time-critical events for review. It has no preferred theory
+to confirm.
 
+This path is designed for questions such as:
+
+- Is an apparently extragalactic transient actually a nearby variable star?
+- Does a light curve evolve too quickly, too slowly, or differently across
+  filters for its proposed class?
+- Is a candidate coincident with a known strong-lens field and therefore worth
+  immediate follow-up?
+- Which labelled rare events are being missed, and which routine events are
+  creating false alarms?
+
+### 2. What can populations and precision measurements tell us about physics?
+
+The **constraint-science path** is hypothesis-driven and strictly downstream
+of the alert pipeline. It compares ensemble statistics and published
+measurements with explicit standard-model expectations before discussing
+alternatives such as evolving dark energy or modified gravity.
+
+The three science channels are:
+
+1. **Combined probes:** DESI BAO, CMB, supernovae, and weak-lensing constraints
+   on the dark-energy equation of state, growth, and `S8`.
+2. **Strong-lens statistics:** Euclid lens abundance and profile measurements,
+   with the sensitivity floor stated explicitly. Euclid Q1 is a capability
+   demonstration, not a cosmological-parameter fit.
+3. **Gravitational-wave standard sirens:** the planned multi-messenger channel
+   linking rapid optical-counterpart discovery with tests of gravitational-wave
+   propagation.
+
+The processing pipeline never imports constraint analyses. Anomaly flags remain
+agnostic; physical interpretation belongs in dedicated analyses and human
+review.
+
+## From an Alert to a Reviewable Candidate
+
+```text
+                         AGNOSTIC DISCOVERY PATH
+
+  Fink/ZTF REST       Bronze             Silver              Gold
+  alert records  -->  raw + source  -->  validated +   -->   catalog context +
+                      provenance         replay-safe         light-curve features
+                                               |                    |
+                                               |                    v
+                                               |             deterministic classifier
+                                               |                    |
+                                               +------------------> v
+                                                          anomaly assessment
+                                                                    |
+                                                                    v
+                                                          human-readable report
+
+                      CONSTRAINT-SCIENCE PATH (DOWNSTREAM)
+
+            published constraints + Euclid lens catalogues --> notebooks
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           DATA FLOW                                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│   Fink API ──► Bronze ──► Silver ──► Gold ──► Agents ──► Reports        │
-│                  │          │         │          │                       │
-│                  │          │         │          ▼                       │
-│               Raw data   Cleaned   Enriched   Anomaly                   │
-│               + metadata  + valid  + xmatch   Assessment                │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
 
-| Layer | Purpose | Contents |
-|-------|---------|----------|
-| **Bronze** | Raw ingestion | Alerts as-received from Fink, with ingestion metadata. Append-only, preserves everything. |
-| **Silver** | Cleaned & validated | Schema enforced, bad detections filtered, coordinates standardized, duplicates removed. |
-| **Gold** | Enriched & ready | Cross-matched with Gaia/SIMBAD, light curve features computed, ML classifications attached. |
+| Stage | What it does today | Key guarantee |
+|---|---|---|
+| **Bronze** | Canonicalizes Fink's prefixed fields and stores the original payload with ingestion metadata. | Source records remain auditable. |
+| **Silver** | Validates coordinates, time, filter, and photometry; applies quality gates; deduplicates candidates. | Replay-idempotent writes preserve nullable, full-precision ZTF candidate IDs and provenance. |
+| **Gold** | Adds Gaia DR3/SIMBAD context, stellar discrimination, Euclid lens-field matching, and per-filter light-curve features. | Derived results retain source and processing identifiers. |
+| **Classifier** | Uses the Fink label and deterministic evidence agreement to assign class, confidence, alternatives, anomaly score, and priority. | No hidden model or LLM decision in the hot path. |
+| **Anomaly assessment** | Adds a baseline comparison, deviation estimate, trials-corrected false-alarm heuristic, and systematic checks to flagged events. | Flags explain why an event was routed. |
+| **Report** | Produces Markdown, JSON, and Parquet outputs for a scoped batch or night. | Review counts and trials cannot silently mix unrelated nights. |
 
-### Processing Paths
+Lens-field transients always receive `CRITICAL` priority. The future
+gravitational-wave counterpart flag is designed to receive the same treatment.
 
-| Path | Latency | Method | Purpose |
-|------|---------|--------|---------|
-| **Hot** | Seconds | Spark + ML | Ingest, clean, basic classification |
-| **Warm** | Minutes | LLM Agents | Triage flagged events, cross-reference, assess anomalies |
-| **Cold** | Hours | Human | Review detailed reports for genuinely unusual events |
+### Light Curves Without Mixing Colour and Time
 
-## Project Structure
+ZTF observes in multiple filters. Alternating between a faint `g`-band
+measurement and a brighter `r`-band measurement can look like dramatic
+variability if the filters are combined indiscriminately.
 
-```
-astrophysics-data-engineering-codex/
-├── src/
-│   ├── __init__.py
-│   ├── exceptions.py               # Custom exception hierarchy (AGDError)
-│   ├── models/
-│   │   └── alerts.py               # Pydantic models for ZTF/Fink alerts
-│   ├── ingestion/
-│   │   ├── fink_api_client.py      # Fink REST API client (retry/backoff)
-│   │   └── euclid_client.py        # ESA Euclid TAP client (MER, provenance, DR tag)
-│   ├── crossref/
-│   │   ├── gaia_client.py          # Gaia DR3 cone search (retry, Parquet cache)
-│   │   ├── simbad_client.py        # SIMBAD cone search (retry, Parquet cache)
-│   │   └── utils.py                # Separation, NaN handling, cache keys
-│   ├── processing/
-│   │   ├── bronze_processor.py     # Bronze layer processing
-│   │   ├── silver_processor.py     # Validation, quality filtering, deduplication
-│   │   ├── gold_processor.py       # Cross-match enrichment, discriminator, LC features,
-│   │   │                           #   Euclid lens-field flagging
-│   │   └── euclid_lens_processor.py # SLDE lens catalogue bronze/silver
-│   ├── utils/
-│   │   └── config.py               # Pydantic-based runtime configuration
-│   └── agents/                     # (Future: AI agent implementations)
-├── scripts/
-│   ├── run_fink_silver_smoke.py    # Live bronze→silver smoke run
-│   ├── run_fink_gold_smoke.py      # Bronze→silver→gold smoke (live or synthetic)
-│   └── ingest_euclid_q1.py         # Euclid Q1: live MER TAP + SLDE lens catalogue
-├── tests/
-│   ├── conftest.py                 # Shared pytest fixtures
-│   ├── test_ingestion/             # Fink API client tests
-│   ├── test_crossref/              # Gaia/SIMBAD client tests (mocked + live-gated)
-│   ├── test_processing/            # Bronze, silver & gold processor tests
-│   ├── test_scripts/               # Smoke-script tests
-│   └── test_utils/                 # Config tests
-├── config/
-│   └── default.yaml                # Non-loaded planning config for future phases
-├── .github/workflows/ci.yml        # CI: ruff + black + pytest (Python 3.11 / 3.12)
-├── AGENTS.md                       # Provider-neutral agent operating contract
-├── AGD_FORWARD_PLAN.md             # Roadmap & per-phase execution plan
-├── SCIENCE_GOALS.md                # Science motivation
-├── pyproject.toml                  # Project configuration & dependencies
-└── README.md
-```
+Gold therefore computes independent `g`/`r`/`i` features, including detection
+count, time span, weighted magnitude, amplitude and rate with propagated
+photometric uncertainty, and cadence. Earlier same-object rows from a Fink
+object-history batch are included; future observations and repeated epochs are
+excluded. These features feed the deterministic routing logic and the
+calibration replay.
 
-## Current Status
+## Current State of Development
 
-**Implemented — ZTF/Fink transient pipeline (bronze → silver → gold):**
+| Capability | State | Notes |
+|---|---|---|
+| Fink/ZTF REST ingestion | Implemented | Public API, canonical field mapping, configurable timeout/retry/backoff, visible parse failures. |
+| Bronze/Silver processing | Implemented | Quality gates, provenance, Parquet/JSON output, replay-idempotent Silver. |
+| Gaia DR3/SIMBAD enrichment | Implemented | Cone searches, retry/cache behavior, stellar/extragalactic evidence, graceful degradation. |
+| Euclid Q1 tooling | Implemented | MER access scaffold, SLDE lens catalogue processing, lens-field transient matching. |
+| Per-filter light-curve features | Implemented | Uncertainty- and cadence-aware; compatible with bounded Fink history replay. |
+| Classification/anomaly assessment | Implemented | Deterministic, explainable routing and scoped nightly reports. |
+| Constraint and lensing notebooks | Implemented | Published-value provenance and explicit sensitivity floors. |
+| Labelled calibration replay | Implemented | BTS/Fink replay, object-disjoint temporal evaluation, measured false positives and misses. |
+| GW counterpart channel | Planned | GraceDB/GCN ingestion, skymap filtering, counterpart escalation, standard-siren notebook. |
+| Kafka, Spark/Delta, Rubin-scale processing | Future | Local processing currently uses pandas/PyArrow and Parquet/JSON; Delta is explicitly rejected. |
 
-- [x] Project structure and Pydantic runtime configuration
-- [x] Custom exception hierarchy
-- [x] Pydantic models for ZTF alerts
-- [x] Bronze layer processor
-- [x] Fink API client with retry logic
-- [x] Silver layer processor (quality gates, dedup, provenance)
-- [x] Repo convergence (Phase 0): CI, single config source of truth, timezone-aware datetimes
-- [x] Gold layer + Gaia DR3 / SIMBAD cross-match (Phase 1): cone-search clients with
-      retry + Parquet cache, star/extragalactic discriminator, light-curve features,
-      provenance pointers (no raw payload JSON in gold)
-- [x] Euclid Q1 open-data ingestion (Phase 2): ESA TAP client (MER final catalogue →
-      bronze with DR-tagged provenance), SLDE strong-lens catalogue → bronze/silver
-      with grade filtering, and the gold-layer `lens_field_transient` cross-match
-- [x] Test framework + smoke/ingest scripts (live or offline synthetic)
+The current implementation is a **bounded research pipeline**, not a
+production real-time broker. Runs are manual by default. The calibration CLI
+defaults to 100 alerts and enforces a 1,000-alert total hard cap so exploratory
+work remains inexpensive and reviewable.
 
-**Next — see [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md) for the full plan:**
+## Quick Start
 
-- [ ] Multi-probe constraint & lensing science harness (`feat/constraint-harness`)
-- [ ] Lens-aware anomaly agent (`feat/anomaly-agent`)
-- [ ] Multi-messenger GW counterpart channel (`feat/gw-counterparts`)
+### Install
 
-## Getting Started
-
-### Prerequisites
-
-- Python 3.11+
-- (Optional) Databricks workspace for production deployment
-
-### Installation
+AGD supports Python 3.11 and 3.12.
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/astrophysics-data-engineering.git
-cd astrophysics-data-engineering
+git clone <repository-or-fork-url> agd
+cd agd
 
-# Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
-
-# Install dependencies
-pip install -e ".[dev]"
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 ```
 
-### Configuration
-
-Configuration is managed via environment variables or a manually created `.env` file:
+Runtime configuration is provided by `src/utils/config.py` through environment
+variables or an optional `.env` file. `config/default.yaml` is a planning
+reference and is not loaded by the application.
 
 ```bash
-# .env example
-AGD_ENVIRONMENT=development
-STORAGE_BASE_PATH=./data
-FINK_TIMEOUT_SECONDS=30
+# Optional runtime overrides
+export STORAGE_BASE_PATH=./data
+export FINK_TIMEOUT_SECONDS=30
+export FINK_MAX_RETRIES=3
 ```
 
-The **single runtime source of truth** is `src/utils/config.py` (Pydantic settings, overridable via environment variables / `.env`). `config/default.yaml` is **not loaded** by the application — it is a planning reference for configuration that future phases will implement in Pydantic, and it must not duplicate any runtime value. See `AGENTS.md` → "Configuration".
+The default Fink endpoint is `https://api.ztf.fink-portal.org`. Local storage
+supports Parquet and JSON. Requesting Delta fails explicitly until a real Delta
+writer is implemented.
 
-### Running Tests
+### Run the Pipeline Offline
+
+Exercise Bronze, Silver, and Gold without external services:
 
 ```bash
-pytest                          # Run all tests
-pytest -m "not integration"     # Skip integration tests (what CI runs)
-AGD_RUN_INTEGRATION_TESTS=1 pytest -m integration  # Live Fink/Gaia queries
-pytest --cov=src                # With coverage report
+PYTHONPATH=. python scripts/run_fink_gold_smoke.py \
+  --source synthetic \
+  --no-crossmatch \
+  --limit 25 \
+  --storage-base /tmp/agd-smoke
 ```
 
-Integration tests hit live services (Fink, Gaia). astroquery's Gaia TAP layer
-ignores `HTTPS_PROXY`, so behind a CONNECT proxy also export
-`CROSSMATCH_TAP_PROXY_URL` (and `CROSSMATCH_TAP_CA_BUNDLE` if the proxy
-re-terminates TLS) — the Gaia client then tunnels through it. In a normal
-direct-network environment none of this is needed.
+Generate a scoped review report from the resulting Gold data:
 
-### Basic Usage
-
-```python
-from src.processing import BronzeProcessor
-from src.utils.config import get_settings
-
-# Initialize processor
-processor = BronzeProcessor()
-
-# Process raw alerts (from Fink API)
-raw_alerts = [
-    {
-        "objectId": "ZTF21aaxtctv",
-        "ra": 193.822,
-        "dec": 2.896,
-        "magpsf": 18.5,
-        "sigmapsf": 0.05,
-        "fid": 1,
-        "jd": 2460000.5,
-    }
-]
-
-# Validate and create batch
-batch = processor.process_alerts(raw_alerts)
-print(f"Processed {batch.count} alerts")
-
-# Write to bronze layer
-processor.write_batch(batch)
-
-# Read back and analyze
-df = processor.read_bronze_data()
-stats = processor.get_statistics()
+```bash
+PYTHONPATH=. python scripts/nightly_report.py \
+  --gold-path /tmp/agd-smoke/gold/alerts \
+  --output-dir /tmp/agd-smoke/reports
 ```
 
-## Key Concepts
+The report contains classification counts, follow-up priorities, lens-field
+matches, anomaly assessments, provenance, and system metrics.
 
-### Astronomical Measures
+### Run a Small Live Fink Smoke
 
-| Measure | Description |
-|---------|-------------|
-| **Magnitude** | Logarithmic brightness scale. Lower = brighter. Each step of 1 mag = 2.512x brightness change. |
-| **Julian Date (JD)** | Continuous day count used in astronomy. JD 2460000 ≈ Feb 2023. |
-| **RA/Dec** | Right Ascension (0-360°) and Declination (-90° to +90°) — celestial coordinates. |
-| **Filter (g/r/i)** | Photometric bands: g (green, ~475nm), r (red, ~625nm), i (infrared, ~775nm). |
+With network access to the public Fink API:
 
-### ZTF Alert Structure
+```bash
+PYTHONPATH=. python scripts/run_fink_silver_smoke.py \
+  --class "SN candidate" \
+  --limit 25 \
+  --storage-base /tmp/agd-fink-smoke
+```
 
-Each alert contains:
-- **objectId**: Unique ZTF identifier (e.g., `ZTF21aaxtctv`)
-- **candid**: Unique alert/candidate ID
-- **ra, dec**: Sky coordinates in degrees
-- **magpsf, sigmapsf**: Brightness measurement and uncertainty
-- **fid**: Filter ID (1=g, 2=r, 3=i)
-- **jd**: Julian date of observation
-- **prv_candidates**: Previous 30 days of detections (light curve history)
+For Gold enrichment, use `run_fink_gold_smoke.py`. Add `--no-crossmatch` when
+Gaia/SIMBAD egress is unavailable; catalog fields will remain null rather than
+blocking the batch.
 
-### Fink Classifications
+### Replay Labelled Objects and Measure Failure Modes
 
-The Fink broker assigns ML classifications:
-- `SN candidate` — Supernova candidate
-- `Early SN Ia candidate` — Early-stage Type Ia supernova
-- `Kilonova candidate` — Neutron star merger remnant
-- `Microlensing candidate` — Gravitational microlensing event
-- `Variable Star` — Various variable star types
-- `AGN` — Active galactic nucleus
-- `Solar System MPC` — Known solar system object
+The bundled manifest contains a small set of independently labelled ZTF Bright
+Transient Survey (BTS) objects. The replay fetches bounded Fink histories,
+processes them through the medallion, and evaluates classification and routing
+on temporally separated cohorts:
 
-## Technology Stack
+```bash
+PYTHONPATH=. python scripts/run_fink_calibration_replay.py \
+  --manifest tests/fixtures/calibration/ztf_bts_replay_manifest.json \
+  --split-date 2021-01-01 \
+  --max-objects 20 \
+  --max-alerts 100 \
+  --max-alerts-per-object 100 \
+  --no-crossmatch
+```
 
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Data Processing | Apache Spark | Distributed alert processing |
-| Storage | Delta Lake | ACID transactions, time travel, schema evolution |
-| Data Models | Pydantic | Validation, serialization, type safety |
-| Configuration | pydantic-settings | Environment-based config management |
-| Logging | structlog | Structured logging for observability |
-| Astronomy | astropy, astroquery | Coordinate transforms, catalog queries |
-| AI Agents | Provider-neutral (future) | Scientific reasoning and anomaly assessment |
-| Testing | pytest | Unit, integration, and data quality tests |
+The output includes predictions and metrics for classification accuracy,
+precision, recall, false-positive rate, and missed labelled review targets.
+Long-lived objects crossing the split contribute only post-split predictions;
+their earlier photometry can still inform later features without placing the
+same object in both evaluation cohorts.
 
-## Development Guidelines
+`truth_is_rare` means **worth reviewing**, not **evidence of new physics**.
+The current anomaly score and false-alarm calculation are routing heuristics,
+not empirically calibrated discovery significances.
 
-### Code Style
+## What the First Live Calibration Run Tells Us
 
-- Python 3.11+ with type hints everywhere
-- Google-style docstrings on public functions
-- `ruff` for linting, `black` for formatting
-- Structured logging (no print statements)
+A bounded 100-alert BTS/Fink replay was run on 19 July 2026 with catalog
+cross-matching disabled. Eight labelled objects returned data. All 100 alerts
+passed Bronze, Silver, and Gold with no Silver rejections, duplicate candidate
+IDs, invalid coordinates/photometry, or null provenance. Gold recovered
+multi-epoch history for 92 alerts and repeated-filter features for 88.
 
-### Testing Philosophy
+The routing results are more instructive than the successful plumbing:
 
-Science demands rigor:
-- Unit tests for individual functions
-- Integration tests for pipeline stages
-- Known-object tests: verify correct classification of well-characterized objects
-- Regression tests: improvements must not break existing correct classifications
+| Cohort | Composition | Result |
+|---|---|---|
+| **Training-era diagnostic** | 27 TDE/LBV review targets and 13 SN IIP controls | 1/27 review targets flagged: **3.7% recall, 26 misses**; no control false positives. |
+| **Temporal holdout** | 60 SN Ia controls; no rare targets | One false positive: **1.7%**; rare-event recall is undefined. |
 
-### Error Handling
+Comparable coarse-class accuracy was `12/13` in the training-era diagnostic
+and `27/43` in the holdout. These are small-sample diagnostics, not a measure
+of survey performance.
 
-- Custom exceptions inherit from `AGDError`
-- Never silently swallow pipeline errors
-- Retry with exponential backoff for external APIs
-- Log full context on failures (alert ID, stage, details)
+The immediate scientific conclusion is straightforward: **the pipeline can
+replay and characterize real alerts, but the present routing heuristic is not
+yet useful for reliable rare-event discovery.** The next calibration step is to
+expand and balance the labelled temporal holdout, especially with rare
+post-split targets, then measure and tune missed-event and false-positive
+rates before adding scheduled compute or new science channels.
+
+## Scientific Scope and Guardrails
+
+AGD follows three tiers from [`SCIENCE_GOALS.md`](SCIENCE_GOALS.md):
+
+1. **Validation:** classify familiar transient populations, including
+   supernovae, kilonova candidates, active galaxies, variable stars, and
+   Solar System objects.
+2. **Discovery:** flag unexpected light-curve, spatial, colour, temporal, or
+   cross-reference behavior and escalate lens-field transients. No theoretical
+   interpretation is attached to an anomaly flag.
+3. **Constraints:** test explicit physical hypotheses using ensemble or
+   multi-messenger observables in reproducible, downstream analyses.
+
+Every anomaly assessment is expected to state its baseline, deviation,
+false-alarm context, and known-systematic checks. Every constraint analysis
+must first reproduce the published baseline, state its sensitivity floor, and
+only then compare theory space. Null results are results.
+
+### Data Sources and Their Roles
+
+| Source | Role in AGD |
+|---|---|
+| **ZTF/Fink** | Time-domain testbed: public alert retrieval, classification context, and light-curve history. |
+| **Gaia DR3/SIMBAD** | Astrometric and object context for stellar/extragalactic discrimination and cross-match checks. |
+| **Euclid Q1** | Schema and strong-lens capability demo; roughly 500 lens candidates over 63.1 square degrees. |
+| **Euclid DR1-Foundation** | Planned lensing/growth upgrade and larger lens-statistics sample. |
+| **DESI, CMB, SNe Ia, KiDS/DES weak lensing** | Published combined-probe constraints used by the analysis notebooks. |
+| **LIGO/Virgo/KAGRA** | Planned public-alert and standard-siren channel requiring rapid optical counterpart identification. |
+
+Euclid Q1 is intentionally not used to claim cosmological-parameter
+constraints. The strong-lens notebook reports the optimistic counting-only
+three-sigma abundance floor: about 13.4% for `N ~= 500` and 3.6% for
+`N ~= 7000`, before completeness, purity, sample variance, or modeling
+systematics.
+
+## Repository Guide
+
+```text
+src/
+  ingestion/     Fink REST and Euclid TAP clients
+  models/        Alert, classification, cross-match, and lens data contracts
+  processing/    Bronze, Silver, Gold, lens processing, deterministic classifier
+  crossref/      Gaia DR3/SIMBAD clients and coordinate/cache utilities
+  agents/        Deterministic warm-path anomaly assessment
+  analysis/      Calibration, cosmology constraints, and lensing utilities
+
+scripts/
+  run_fink_silver_smoke.py       Live Fink -> Bronze -> Silver
+  run_fink_gold_smoke.py         Live/synthetic -> Bronze -> Silver -> Gold
+  run_fink_calibration_replay.py Bounded BTS/Fink replay and routing metrics
+  nightly_report.py              Classification and anomaly-review outputs
+  ingest_euclid_q1.py            Euclid Q1 catalogue ingestion
+
+notebooks/
+  combined_probe_constraints.ipynb  Published cosmological-constraint harness
+  euclid_lens_statistics.ipynb      Strong-lens toolkit and sensitivity floor
+
+tests/           Unit, data-quality, integration-gated, and replay tests
+```
+
+## Development and Validation
+
+Run the local validation suite before publishing changes:
+
+```bash
+python -m ruff check src/ tests/ scripts/
+python -m black --check src/ tests/ scripts/
+python -m pytest tests/ -v
+```
+
+Live integrations are opt-in:
+
+```bash
+AGD_RUN_INTEGRATION_TESTS=1 python -m pytest tests/ -m integration -v
+```
+
+Gaia's TAP client can require an explicit CONNECT proxy in restricted network
+environments. Set `CROSSMATCH_TAP_PROXY_URL` and, when TLS is re-terminated,
+`CROSSMATCH_TAP_CA_BUNDLE`. Offline tests use fixtures and mocked services.
+
+The current validated development snapshot has **274 passing tests and 7
+live-gated skips**. Scientific and pipeline changes should include focused
+regression coverage and preserve the Bronze -> Silver -> Gold contract.
 
 ## Roadmap
 
-The authoritative, phase-by-phase plan (with acceptance criteria and data-source
-detail) is [`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md). Summary:
+The detailed acceptance criteria and handoff notes live in
+[`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md).
 
-| Phase | Branch | Focus |
-|-------|--------|-------|
-| **0 — Repo convergence** ✅ | `chore/repo-convergence` | CI, single config source of truth, timezone-aware datetimes, hardened agent contract |
-| **1 — Gold + cross-match** ✅ | `feat/gold-crossref` | Silver→gold; Gaia DR3 / SIMBAD cone-search cross-match; star/extragalactic discrimination |
-| **2 — Euclid Q1 ingestion** ✅ | `feat/euclid-q1` | Batch TAP/ADQL ingestion of Euclid open data (MER catalogue + Q1 strong-lens sample) through the medallion; transient↔lens-field cross-match |
-| **3 — Constraint & lensing harness** | `feat/constraint-harness` | Falsifiable multi-probe cosmology fit (DESI + CMB + SNe + weak lensing → w₀, wₐ, γ vs GR+ΛCDM) and strong-lens statistics |
-| **4 — Anomaly agent** | `feat/anomaly-agent` | Lens-aware, provider-neutral warm-path anomaly assessment + nightly report |
-| **5 — GW counterpart channel** | `feat/gw-counterparts` | LIGO/Virgo/KAGRA public alerts → skymap-filtered ZTF/Rubin counterpart search; GW standard-siren (graviton-leakage) test |
+| Phase | Focus | State |
+|---|---|---|
+| **0. Repository convergence** | Runtime configuration, UTC handling, contributor contract. | Implemented |
+| **1. Gold and cross-match** | Gaia/SIMBAD enrichment and stellar discrimination. | Implemented |
+| **2. Euclid Q1** | MER/SLDE tooling and lens-field matching. | Implemented |
+| **3. Constraint and lensing harness** | Published cosmological constraints and strong-lens statistics. | Implemented |
+| **4. Classification and anomaly assessment** | Deterministic routing, rigor fields, and nightly report. | Implemented |
+| **4.5. Reliability and calibration** | Replay safety, per-filter features, and labelled temporal evaluation. | Implemented on the current development branch |
+| **5. GW counterpart channel** | Public GW triggers, skymap filtering, counterpart escalation, standard-siren analysis. | Planned |
 
-### Euclid data landscape
+Longer-term work includes larger labelled replays, Rubin/LSST ingestion,
+streaming, scale-out storage/processing, and operational monitoring. None of
+those should precede evidence that the bounded review loop is scientifically
+useful.
 
-Euclid ingestion (Phase 2) targets the ESA/IRSA open-data releases via
-`astroquery.esa.euclid` (TAP/ADQL): **Q1** (out; strong-lens capability demo),
-with the harness designed to swap cleanly to **DR1-Foundation** (~1900 deg²,
-Nov 2026) — the Stage-IV weak-lensing upgrade. Euclid is treated as batch
-catalogue ingestion inside the same bronze→silver→gold medallion, not a second
-pipeline.
+## References and Acknowledgments
 
-### Science framing (honest by design)
+AGD builds on openly available astronomy services and published results:
 
-No single dataset "detects a new dimension." Extra-dimensional models are tested
-through three falsifiable channels, kept deliberately decoupled from the *agnostic*
-anomaly hunt (biasing discovery toward a favoured explanation manufactures
-confirmations):
+- [Fink ZTF documentation](https://doc.ztf.fink-broker.org/) and the
+  [Fink Broker](https://fink-broker.org/)
+- [Zwicky Transient Facility](https://www.ztf.caltech.edu/) and the
+  [ZTF Bright Transient Survey Sample Explorer](https://sites.astro.caltech.edu/ztf/bts/explorer.php)
+- [Euclid Q1 strong-lens catalogue paper](https://arxiv.org/abs/2503.15324)
+- [DESI DR2 BAO results](https://arxiv.org/abs/2503.14738)
+- [GW170817 dimensional-constraint analysis](https://arxiv.org/abs/1801.08160)
 
-1. **Combined-probe parameters** — the dark-energy equation of state **(w₀, wₐ)**,
-   growth index **γ**, and **S₈**, constrained by DESI + CMB + SNe + Stage-III weak
-   lensing (Phase 3a).
-2. **Lens / growth statistics** — strong-lens abundance and profile statistics as a
-   DR1-ready ensemble instrument (Phase 3b).
-3. **GW standard sirens** — if gravitons leak into extra dimensions, GW sources look
-   dimmer than their EM counterparts (d_L^GW > d_L^EM); GW170817 pinned spacetime to
-   D ≈ 4.0 ± 0.1. Sharpening this needs exactly AGD's competency — rapid optical
-   counterpart ID after GW triggers (Phase 5).
-
-Every conclusion traces to a computed number. See
-[`SCIENCE_GOALS.md`](SCIENCE_GOALS.md) and `AGD_FORWARD_PLAN.md` §2.4.
-
-### Longer horizon
-- Databricks/Delta deployment, Kafka streaming, monitoring dashboards
-- Rubin/LSST-scale ingestion
-
-## Contributing
-
-Contributions welcome! Please read through the codebase, run the tests, and open a PR with your changes.
+See [`SCIENCE_GOALS.md`](SCIENCE_GOALS.md) for the full scientific context and
+[`AGD_FORWARD_PLAN.md`](AGD_FORWARD_PLAN.md) for source provenance, release
+checkpoints, and phase-level detail.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-- [Fink Broker](https://fink-broker.org/) for providing the alert stream API
-- [ZTF](https://www.ztf.caltech.edu/) for the transient survey data
-- [Databricks](https://databricks.com/) for the lakehouse platform
+MIT. See [`LICENSE`](LICENSE).

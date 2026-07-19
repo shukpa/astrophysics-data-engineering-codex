@@ -50,3 +50,5 @@ def test_lens_notebook_has_sensitivity_floor() -> None:
     src = "\n".join(c.source for c in nb.cells)
     assert "detectable_fraction" in src
     assert "sensitivity floor" in src.lower()
+    assert "40000" not in src
+    assert "3.6%" in src

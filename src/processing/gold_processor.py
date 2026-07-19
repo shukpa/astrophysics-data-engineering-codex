@@ -107,6 +107,9 @@ class GoldProcessor:
         matched_simbad = 0
         matched_lens = 0
         crossmatch_failed = 0
+        batch_history: dict[str, list[SilverAlert]] = {}
+        for silver_alert in batch.alerts:
+            batch_history.setdefault(silver_alert.object_id, []).append(silver_alert)
 
         for silver_alert in batch.alerts:
             gaia_match, simbad_match, failed = self._crossmatch_position(silver_alert)
@@ -123,6 +126,7 @@ class GoldProcessor:
                     gold_processing_id=batch_id,
                     gaia_match=gaia_match,
                     simbad_match=simbad_match,
+                    batch_history=batch_history[silver_alert.object_id],
                 )
             except Exception as exc:
                 raise GoldProcessingError(
@@ -217,7 +221,7 @@ class GoldProcessor:
                     filters = [("observation_date", "=", observation_date)]
                 df = pd.read_parquet(self.output_path, filters=filters, engine="pyarrow")
 
-            if limit:
+            if limit is not None:
                 df = df.head(limit)
             return df
         except Exception as exc:
@@ -379,32 +383,62 @@ class GoldProcessor:
             return True, "+".join(evidence)
         return False, None
 
-    def _light_curve_features(self, alert: SilverAlert) -> dict[str, Any]:
+    def _light_curve_features(
+        self,
+        alert: SilverAlert,
+        batch_history: list[SilverAlert] | None = None,
+    ) -> dict[str, Any]:
         """Derive light-curve features from the alert history.
 
-        Uses the current epoch plus any ``prv_candidates`` preserved in the
-        silver raw payload. Only epochs with a finite magnitude count as
-        detections. ``lc_mag_rate_per_day`` is the magnitude change per day
-        between the two most recent detections (negative = brightening).
+        Uses the current epoch, earlier same-object alerts in the silver batch,
+        and any ``prv_candidates`` preserved in the raw payload. Future epochs
+        are excluded and repeated packet/batch epochs are de-duplicated. Only
+        finite detections count. Aggregate features are retained for
+        compatibility; ``lc_per_filter`` keeps g/r/i measurements separate and
+        carries uncertainty and cadence information for anomaly calibration.
         """
-        epochs: list[tuple[float, float]] = [(alert.jd, alert.magpsf)]
+        epochs: list[tuple[float, float, float | None, int]] = [
+            (alert.jd, alert.magpsf, alert.sigmapsf, alert.filter_id)
+        ]
+
+        for previous in batch_history or []:
+            if previous.jd >= alert.jd:
+                continue
+            epochs.append((previous.jd, previous.magpsf, previous.sigmapsf, previous.filter_id))
 
         for prv in self._extract_prv_candidates(alert):
             jd = prv.get("jd")
             mag = prv.get("magpsf")
-            if jd is None or mag is None:
+            fid = prv.get("fid")
+            if jd is None or mag is None or fid is None:
                 continue
             try:
                 jd_f = float(jd)
                 mag_f = float(mag)
+                fid_i = int(fid)
+                sigma = prv.get("sigmapsf")
+                sigma_f = float(sigma) if sigma is not None else None
             except (TypeError, ValueError):
                 continue
-            if math.isfinite(jd_f) and math.isfinite(mag_f):
-                epochs.append((jd_f, mag_f))
+            if not math.isfinite(jd_f) or not math.isfinite(mag_f):
+                continue
+            if fid_i not in {1, 2, 3} or jd_f >= alert.jd:
+                continue
+            if sigma_f is not None and (not math.isfinite(sigma_f) or sigma_f < 0):
+                sigma_f = None
+            epochs.append((jd_f, mag_f, sigma_f, fid_i))
+
+        unique_epochs: dict[tuple[float, float, int], tuple[float, float, float | None, int]] = {}
+        for epoch in epochs:
+            key = (epoch[0], epoch[1], epoch[3])
+            current = unique_epochs.get(key)
+            if current is None or (current[2] is None and epoch[2] is not None):
+                unique_epochs[key] = epoch
+        epochs = list(unique_epochs.values())
 
         epochs.sort(key=lambda pair: pair[0])
-        mags = [mag for _, mag in epochs]
-        jds = [jd for jd, _ in epochs]
+        mags = [mag for _, mag, _, _ in epochs]
+        jds = [jd for jd, _, _, _ in epochs]
 
         features: dict[str, Any] = {
             "lc_n_detections": len(epochs),
@@ -415,15 +449,81 @@ class GoldProcessor:
             "lc_mag_std": statistics.pstdev(mags) if len(mags) > 1 else 0.0,
             "lc_amplitude": max(mags) - min(mags),
             "lc_mag_rate_per_day": None,
+            "lc_per_filter": self._per_filter_features(epochs),
         }
 
         if len(epochs) > 1:
-            (jd_prev, mag_prev), (jd_last, mag_last) = epochs[-2], epochs[-1]
+            (jd_prev, mag_prev, _, _), (jd_last, mag_last, _, _) = epochs[-2], epochs[-1]
             dt = jd_last - jd_prev
             if dt > 0:
                 features["lc_mag_rate_per_day"] = (mag_last - mag_prev) / dt
 
         return features
+
+    def _per_filter_features(
+        self, epochs: list[tuple[float, float, float | None, int]]
+    ) -> dict[str, dict[str, Any]]:
+        """Compute independent g/r/i features with uncertainty propagation."""
+        grouped: dict[int, list[tuple[float, float, float | None]]] = {}
+        for jd, mag, sigma, fid in epochs:
+            grouped.setdefault(fid, []).append((jd, mag, sigma))
+
+        result: dict[str, dict[str, Any]] = {}
+        names = {1: "g", 2: "r", 3: "i"}
+        for fid, values in grouped.items():
+            values.sort(key=lambda value: value[0])
+            jds = [value[0] for value in values]
+            mags = [value[1] for value in values]
+            sigmas = [value[2] for value in values if value[2] is not None]
+            weights = [1.0 / sigma**2 for _, _, sigma in values if sigma is not None and sigma > 0]
+            weighted_mags = [
+                mag / sigma**2 for _, mag, sigma in values if sigma is not None and sigma > 0
+            ]
+            cadence = [
+                later - earlier
+                for earlier, later in zip(jds, jds[1:], strict=False)
+                if later > earlier
+            ]
+
+            brightest_index = mags.index(min(mags))
+            faintest_index = mags.index(max(mags))
+            brightest_sigma = values[brightest_index][2]
+            faintest_sigma = values[faintest_index][2]
+            amplitude_uncertainty = None
+            if brightest_sigma is not None and faintest_sigma is not None:
+                amplitude_uncertainty = math.hypot(brightest_sigma, faintest_sigma)
+
+            rate = None
+            rate_uncertainty = None
+            if len(values) > 1:
+                jd_prev, mag_prev, sigma_prev = values[-2]
+                jd_last, mag_last, sigma_last = values[-1]
+                dt = jd_last - jd_prev
+                if dt > 0:
+                    rate = (mag_last - mag_prev) / dt
+                    if sigma_prev is not None and sigma_last is not None:
+                        rate_uncertainty = math.hypot(sigma_prev, sigma_last) / dt
+
+            name = names[fid]
+            result[name] = {
+                "filter_id": fid,
+                "filter_name": name,
+                "n_detections": len(values),
+                "time_span_days": jds[-1] - jds[0] if len(values) > 1 else 0.0,
+                "mag_brightest": min(mags),
+                "mag_faintest": max(mags),
+                "mag_mean": statistics.fmean(mags),
+                "mag_weighted_mean": (
+                    sum(weighted_mags) / sum(weights) if weights else statistics.fmean(mags)
+                ),
+                "mean_sigmapsf": statistics.fmean(sigmas) if sigmas else None,
+                "amplitude": max(mags) - min(mags),
+                "amplitude_uncertainty": amplitude_uncertainty,
+                "median_cadence_days": statistics.median(cadence) if cadence else None,
+                "mag_rate_per_day": rate,
+                "mag_rate_uncertainty": rate_uncertainty,
+            }
+        return result
 
     def _extract_prv_candidates(self, alert: SilverAlert) -> list[dict[str, Any]]:
         """Recover prv_candidates from the silver raw payload, if present."""
@@ -434,7 +534,7 @@ class GoldProcessor:
         except (json.JSONDecodeError, TypeError):
             self._log.warning("raw_payload_parse_failed", object_id=alert.object_id)
             return []
-        prv = payload.get("prv_candidates")
+        prv = payload.get("prv_candidates", payload.get("i:prv_candidates"))
         if not isinstance(prv, list):
             return []
         return [entry for entry in prv if isinstance(entry, dict)]
@@ -449,9 +549,10 @@ class GoldProcessor:
         gold_processing_id: str,
         gaia_match: GaiaMatch | None,
         simbad_match: SimbadMatch | None,
+        batch_history: list[SilverAlert] | None = None,
     ) -> GoldAlert:
         is_likely_stellar, stellar_evidence = self._discriminate(gaia_match)
-        features = self._light_curve_features(silver_alert)
+        features = self._light_curve_features(silver_alert, batch_history=batch_history)
         lens_flag, lens_name, lens_separation = self._lens_field_match(
             silver_alert.ra, silver_alert.dec
         )

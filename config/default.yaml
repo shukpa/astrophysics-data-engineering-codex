@@ -19,71 +19,36 @@
 # └───────────────────────────────────────────────────────────────────────────┘
 
 # NOTE: the former `crossmatch:` section was implemented in Phase 1
-# (feat/gold-crossref) as CrossmatchSettings in src/utils/config.py and
-# deleted here per the single-source rule above.
+# (feat/gold-crossref) as CrossmatchSettings and deleted here.
+# NOTE: the former `classification:` taxonomy, agent thresholds, and
+# `output.nightly_digest` sections were implemented in Phase 4
+# (feat/anomaly-agent) as ClassificationSettings / AnomalySettings /
+# ReportSettings in src/utils/config.py and deleted here. The Phase 4
+# classifier and anomaly agent are deterministic (no LLM in any path yet);
+# only the *LLM runtime* placeholders below remain unimplemented.
 
 # =============================================================================
-# Agent configuration (Phase 4 — feat/anomaly-agent; not yet implemented)
-# Provider-neutral: "model" is a placeholder resolved by the runtime the
-# operator selects (see AGENTS.md — no provider is baked in).
+# LLM runtime placeholders (no code home yet — no provider/runtime selected).
+# Provider-neutral: "model" is resolved by whichever runtime the operator
+# selects (see AGENTS.md). These become real config only if/when a phase adds
+# an LLM-backed warm-path assessor on top of the deterministic anomaly agent.
 # =============================================================================
-agents:
+llm_runtime:
   triage:
     model: "provider-model"
     max_tokens: 1000
     temperature: 0.2
-    high_confidence_threshold: 0.85
-    anomaly_score_threshold: 0.7
-
   anomaly:
     model: "provider-model"
     max_tokens: 3000
     temperature: 0.4
-    outlier_sigma_threshold: 3.0
-    minimum_detections_for_analysis: 5
 
 # =============================================================================
-# Classification taxonomy (used by future triage / reporting)
+# Notification channels (Phase 4 report is file-based; delivery unimplemented)
 # =============================================================================
-classification:
-  # Priority levels for follow-up
-  priority_levels:
-    CRITICAL: "Potentially new/anomalous — requires immediate human review"
-    HIGH: "Scientifically valuable known type — spectroscopic follow-up recommended"
-    MEDIUM: "Interesting but not urgent — queue for nightly review"
-    LOW: "Well-characterized known type — archive only"
-
-  # Known transient classes (aligned with Fink classifications)
-  known_classes:
-    - "SN candidate"
-    - "Early SN Ia candidate"
-    - "SN Ia"
-    - "SN II"
-    - "Kilonova candidate"
-    - "Microlensing candidate"
-    - "AGN"
-    - "QSO"
-    - "Variable Star"
-    - "Cataclysmic Variable"
-    - "YSO"
-    - "Solar System MPC"
-    - "Solar System candidate"
-
-# =============================================================================
-# Output & notifications (Phase 4 — nightly report; not yet implemented)
-# =============================================================================
-output:
-  nightly_digest:
-    enabled: true
-    generation_time_utc: "12:00"   # Noon UTC, after most northern-hemisphere nights
-    include_top_n_events: 20
-    include_anomaly_summary: true
-
-  notifications:
-    # Only notify for HIGH and CRITICAL priority
-    minimum_priority: "HIGH"
-    channels:
-      slack:
-        enabled: false
-      discord:
-        enabled: false
+notifications:
+  channels:
+    slack:
+      enabled: false
+    discord:
+      enabled: false

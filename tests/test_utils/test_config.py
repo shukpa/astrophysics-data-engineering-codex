@@ -26,18 +26,16 @@ class TestFinkSettings:
         """Test that FinkSettings has correct defaults."""
         settings = FinkSettings()
 
-        assert settings.base_url == "https://api.fink-portal.org"
+        assert settings.base_url == "https://api.ztf.fink-portal.org"
         assert settings.timeout_seconds == 30
         assert settings.max_retries == 3
         assert settings.retry_backoff_base == 2.0
-        assert settings.rate_limit_requests == 100
-        assert settings.rate_limit_window_seconds == 60
         assert settings.default_output_format == "json"
 
     def test_base_url_trailing_slash_removed(self) -> None:
         """Test that trailing slashes are removed from base_url."""
-        settings = FinkSettings(base_url="https://api.fink-portal.org/")
-        assert settings.base_url == "https://api.fink-portal.org"
+        settings = FinkSettings(base_url="https://api.ztf.fink-portal.org/")
+        assert settings.base_url == "https://api.ztf.fink-portal.org"
 
     def test_timeout_validation(self) -> None:
         """Test timeout validation bounds."""
@@ -88,10 +86,11 @@ class TestStorageSettings:
         assert settings.gold_full_path == Path("/data/lake/gold/alerts")
         assert settings.checkpoint_full_path == Path("/data/lake/checkpoints")
 
-    def test_partition_columns_default(self) -> None:
-        """Test default partition columns."""
-        settings = StorageSettings()
-        assert settings.partition_columns == ["observation_date"]
+    def test_delta_mode_is_rejected_until_implemented(self) -> None:
+        with pytest.raises(ValueError, match="Delta storage is not implemented"):
+            StorageSettings(file_format="delta")
+        with pytest.raises(ValueError, match="Delta storage is not implemented"):
+            StorageSettings(enable_delta=True)
 
 
 class TestProcessingSettings:
@@ -105,8 +104,6 @@ class TestProcessingSettings:
         assert settings.max_alerts_per_request == 100
         assert settings.enable_image_processing is False
         assert settings.schema_validation_mode == "strict"
-        assert settings.deduplication_window_hours == 24
-        assert settings.min_detection_significance == 5.0
 
     def test_batch_size_validation(self) -> None:
         """Test batch_size validation."""
@@ -162,7 +159,7 @@ class TestSettings:
         """Test that nested settings are accessible."""
         settings = Settings()
 
-        assert settings.fink.base_url == "https://api.fink-portal.org"
+        assert settings.fink.base_url == "https://api.ztf.fink-portal.org"
         assert settings.storage.bronze_path == "bronze/alerts"
         assert settings.processing.batch_size == 1000
         assert settings.logging.level == LogLevel.INFO

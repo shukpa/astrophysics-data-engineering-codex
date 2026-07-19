@@ -1,5 +1,6 @@
 """Tests for the bronze processor module."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +153,15 @@ class TestBronzeAlert:
         assert flat["fink_class"] == "SN candidate"
         assert "raw_payload_json" in flat
 
+    def test_to_flat_dict_serializes_datetime_extra_fields(self) -> None:
+        payload = create_sample_alert()
+        payload["retrieved_at"] = datetime(2026, 7, 19, tzinfo=UTC)
+        bronze = BronzeAlert(alert=ZTFAlert(**payload), raw_payload=payload)
+
+        flat = bronze.to_flat_dict()
+
+        assert "2026-07-19" in flat["raw_payload_json"]
+
 
 class TestAlertBatch:
     """Tests for AlertBatch model."""
@@ -214,6 +224,17 @@ class TestBronzeProcessor:
         """Test processing with custom batch ID."""
         batch = processor.process_alerts(sample_alerts, batch_id="custom_123")
         assert batch.batch_id == "custom_123"
+
+    def test_process_canonical_fink_alert_preserves_original_raw_payload(
+        self, processor: BronzeProcessor
+    ) -> None:
+        original = {"i:objectId": "ZTF21raw", "i:candid": 123}
+        canonical = create_sample_alert(object_id="ZTF21raw", candid=123)
+        canonical["_fink_raw_payload"] = original
+
+        batch = processor.process_alerts([canonical])
+
+        assert batch.alerts[0].raw_payload == original
 
     def test_process_alerts_validation_failure_strict(self, processor: BronzeProcessor) -> None:
         """Test that strict mode skips invalid alerts when some alerts succeed."""
