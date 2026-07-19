@@ -137,6 +137,10 @@ class SilverProcessor:
                 existing_alerts = self._read_existing_alerts(alerts)
                 alerts = self._deduplicate(existing_alerts + alerts)
             df = pd.DataFrame([alert.to_flat_dict() for alert in alerts])
+            df["candidate_id"] = pd.array([alert.candidate_id for alert in alerts], dtype="Int64")
+            df["source_candidate_id"] = pd.array(
+                [alert.source_candidate_id for alert in alerts], dtype="Int64"
+            )
 
             if self._storage.file_format == "json":
                 output_file = self._write_json(df, batch.batch_id, replace_existing=idempotent)
